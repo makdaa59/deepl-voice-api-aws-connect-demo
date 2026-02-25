@@ -884,7 +884,7 @@ async function loadTranslateLanguageCodes() {
     return [];
   });
   console.log(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
-  deepLTranslateFromLanguages.forEach((language) => {
+  deepLTranslateFromLanguages.languages.forEach((language) => {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
@@ -893,7 +893,7 @@ async function loadTranslateLanguageCodes() {
     CCP_V2V.UI.agentTranslateFromLanguageSelect.appendChild(option.cloneNode(true));
   });
 
-  deepLTranslateToLanguages.forEach((language) => {
+  deepLTranslateToLanguages.languages.forEach((language) => {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
