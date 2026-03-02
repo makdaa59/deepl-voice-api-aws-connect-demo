@@ -384,6 +384,12 @@ class DeepLVoiceClient {
         console.log(`[${this.type}] 🎬 streamAudio started - chunkSize: ${chunkSize} bytes (${(chunkSize / (sampleRate * 2) * 1000).toFixed(0)}ms @ ${sampleRate}Hz)`);
 
         for await (const audioEvent of getTranscribeAudioStream(audioStream, sampleRate)) {
+            // Stop streaming if we've been disconnected (e.g., call ended)
+            if (!this.shouldReconnect) {
+                console.log(`[${this.type}] 🛑 Stopping audio stream - call disconnected`);
+                break;
+            }
+
             let chunk = audioEvent.AudioEvent.AudioChunk;
             totalChunksReceived++;
 
