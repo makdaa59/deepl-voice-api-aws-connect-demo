@@ -25,7 +25,6 @@ class DeepLVoiceClient {
       dropEvents: [] // { timestamp, bytes, reason, isReconnecting }
     };
 
-    // 🔧 FIX: Buffer audio during brief reconnections (max 10 seconds)
     this.reconnectionBuffer = [];
     this.maxReconnectionBufferMs = 10000; // Buffer up to 10s of audio during reconnection
     

@@ -183,6 +183,14 @@ export class DebugDashboard {
               <span class="metric-value" data-ref="customerErrors">0</span>
             </div>
 
+            <div class="metric-row metric-row-warning">
+              <span class="metric-label">
+                Dropped Audio
+                <span class="info-icon" title="Audio chunks dropped during disconnections or reconnections. This audio was NOT sent to the API and will cause missing sentences.">ℹ️</span>
+              </span>
+              <span class="metric-value" data-ref="customerDroppedAudio">0s (0 chunks)</span>
+            </div>
+
             <div class="quality-timeline-container">
               <div class="quality-timeline-label">
                 Message Freshness History (Last 60 Seconds)
@@ -236,6 +244,14 @@ export class DebugDashboard {
             <div class="metric-row">
               <span class="metric-label">Errors</span>
               <span class="metric-value" data-ref="agentErrors">0</span>
+            </div>
+
+            <div class="metric-row metric-row-warning">
+              <span class="metric-label">
+                Dropped Audio
+                <span class="info-icon" title="Audio chunks dropped during disconnections or reconnections. This audio was NOT sent to the API and will cause missing sentences.">ℹ️</span>
+              </span>
+              <span class="metric-value" data-ref="agentDroppedAudio">0s (0 chunks)</span>
             </div>
 
             <div class="quality-timeline-container">
@@ -484,6 +500,22 @@ export class DebugDashboard {
   }
 
   /**
+   * Get drop statistics from client
+   */
+  getDropStats(type) {
+    try {
+      const client = type === 'agent' ? this.options.agentClient : this.options.customerClient;
+      if (!client || typeof client.getDroppedAudioStats !== 'function') {
+        return null;
+      }
+      return client.getDroppedAudioStats();
+    } catch (error) {
+      console.error(`Error getting ${type} drop stats:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Update health display for a connection
    */
   updateHealthDisplay(type, health) {
@@ -500,6 +532,7 @@ export class DebugDashboard {
       this.refs[`${prefix}Uptime`].textContent = '—';
       this.refs[`${prefix}Messages`].textContent = '0';
       this.refs[`${prefix}Errors`].textContent = '0';
+      this.refs[`${prefix}DroppedAudio`].textContent = '—';
       this.refs[`${prefix}Timeline`].textContent = '▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂';
       return;
     }
@@ -548,6 +581,26 @@ export class DebugDashboard {
     // Update message/error counters
     this.refs[`${prefix}Messages`].textContent = this.formatNumber(health.stats?.totalMessages || 0);
     this.refs[`${prefix}Errors`].textContent = health.stats?.totalErrors || 0;
+
+    // Update dropped audio stats
+    const dropStats = this.getDropStats(type);
+    if (dropStats) {
+      const droppedText = dropStats.totalDroppedChunks > 0
+        ? `${dropStats.totalDroppedSeconds}s (${dropStats.totalDroppedChunks} chunks)`
+        : '0s (0 chunks)';
+      this.refs[`${prefix}DroppedAudio`].textContent = droppedText;
+
+      // Highlight if audio was dropped
+      if (dropStats.totalDroppedChunks > 0) {
+        this.refs[`${prefix}DroppedAudio`].style.color = '#ef4444'; // Red
+        this.refs[`${prefix}DroppedAudio`].style.fontWeight = 'bold';
+      } else {
+        this.refs[`${prefix}DroppedAudio`].style.color = '#10b981'; // Green
+        this.refs[`${prefix}DroppedAudio`].style.fontWeight = 'normal';
+      }
+    } else {
+      this.refs[`${prefix}DroppedAudio`].textContent = '—';
+    }
 
     // Update quality timeline
     this.updateQualityTimeline(prefix, health.stats?.qualityHistory || []);
