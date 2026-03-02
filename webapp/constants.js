@@ -28,9 +28,9 @@ export const DEGRADED_THRESHOLD_MS = 3000; // Yellow warning after 3s
 export const POOR_THRESHOLD_MS = 5000; // Orange warning after 5s
 
 // Zombie connection detection timeouts (configurable via dashboard)
-export const ZOMBIE_DETECTION_TIMEOUT_SPEAKING_MS = 10000; // 10s - Timeout when user is actively speaking
-export const ZOMBIE_DETECTION_TIMEOUT_SILENT_MS = 60000;   // 60s - Timeout when user is silent
-export const SPEECH_GRACE_PERIOD_MS = 5000;                // 5s - Grace period after speech ends for pipeline processing
+export const ZOMBIE_DETECTION_TIMEOUT_SPEAKING_MS = 30000; // 30s - Timeout when user is actively speaking
+export const ZOMBIE_DETECTION_TIMEOUT_SILENT_MS = 60000;  // 60s - Timeout when user is silent
+export const SPEECH_GRACE_PERIOD_MS = 20000;               // 20s - Grace period after speech ends for pipeline processing (increased for longer utterances)
 
 export const MAX_RECONNECT_ATTEMPTS = 5; // Give up after 5 failed attempts
 export const INITIAL_BACKOFF_MS = 1000; // Start with 1s backoff
