@@ -35,6 +35,9 @@ let CurrentAgentConnectionId;
 let ConnectSoftPhoneManager;
 let IsAgentTranscriptionMuted = false;
 
+let agentEventsBound = false;
+let contactEventsBound = false;
+
 // AudioContextManager to manage the AudioContext
 let AudioContextMgr = new AudioContextManager();
 
@@ -462,6 +465,12 @@ const onConnectInitialized = (connectAgent) => {
 
 function subscribeToAgentEvents() {
   // Subscribe to Agent Events from Streams API, and handle Agent events with functions defined above
+  if (agentEventsBound) {
+    console.log(`${LOGGER_PREFIX} - already subscribed to events for agent`);
+    return;
+  }
+  agentEventsBound = true;
+
   console.info(`${LOGGER_PREFIX} - subscribing to events for agent`);
 
   connect.agent((agent) => {
@@ -474,6 +483,12 @@ function subscribeToAgentEvents() {
 
 function subscribeToContactEvents() {
   // Subscribe to Contact Events from Streams API, and handle Contact events
+  if (contactEventsBound) {
+    console.log(`${LOGGER_PREFIX} - already subscribed to events for contact`);
+    return;
+  }
+  contactEventsBound = true;
+
   console.info(`${LOGGER_PREFIX} - subscribing to events for contact`);
   connect.contact((contact) => {
     console.info(`${LOGGER_PREFIX} - new contact`, contact);

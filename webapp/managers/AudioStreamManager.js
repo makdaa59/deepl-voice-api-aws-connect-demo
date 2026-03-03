@@ -14,6 +14,15 @@ export class AudioStreamManager {
     this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
     this.audioElement = audioElement;
 
+    // Master compressor — all sources route through this before destination
+    this.masterCompressor = this.audioContext.createDynamicsCompressor();
+    this.masterCompressor.threshold.value = -24;   // start compressing at -24dBFS
+    this.masterCompressor.knee.value = 30;         // soft knee for natural sound
+    this.masterCompressor.ratio.value = 12;        // 12:1 ratio — fairly aggressive
+    this.masterCompressor.attack.value = 0.003;    // 3ms attack
+    this.masterCompressor.release.value = 0.25;    // 250ms release
+    this.masterCompressor.connect(this.mediaStreamDestination);
+
     // Set up permanent stream
     this.audioElement.srcObject = this.mediaStreamDestination.stream;
     // Store the audio track
@@ -65,7 +74,7 @@ export class AudioStreamManager {
 
       // Connect microphone through gain to destination
       micSource.connect(this.microphoneGain);
-      this.microphoneGain.connect(this.mediaStreamDestination);
+      this.microphoneGain.connect(this.masterCompressor);
 
       // Store stream for cleanup
       this.microphoneStream = stream;
@@ -142,7 +151,7 @@ export class AudioStreamManager {
       gainNode.gain.value = 0.05; // Adjust volume here (0-1)
 
       audioFeedback.connect(gainNode);
-      gainNode.connect(this.mediaStreamDestination);
+      gainNode.connect(this.masterCompressor);
       return audioFeedback;
     }
 
@@ -163,7 +172,7 @@ export class AudioStreamManager {
     gainNode.gain.value = 0.005; // Adjust volume here (0-1)
 
     audioFeedback.connect(gainNode);
-    gainNode.connect(this.mediaStreamDestination);
+    gainNode.connect(this.masterCompressor);
 
     console.info(`${LOGGER_PREFIX} - createAudioFeedback - white noise:`, audioFeedback);
     return audioFeedback;
@@ -264,7 +273,7 @@ export class AudioStreamManager {
           gainNode.gain.value = volume;
           source.buffer = audioBuffer;
           source.connect(gainNode);
-          gainNode.connect(this.mediaStreamDestination);
+          gainNode.connect(this.masterCompressor);
 
           const now = this.audioContext.currentTime;
           const aheadBy = (this.nextStartTime || now) - now;  // how far ahead scheduler is
@@ -323,7 +332,7 @@ export class AudioStreamManager {
     gainNode.gain.value = current.volume; // Set the volume (0.0 to 1.0)
 
     bufferSource.connect(gainNode);
-    gainNode.connect(this.mediaStreamDestination);
+    gainNode.connect(this.masterCompressor);
 
     //bufferSource.connect(this.mediaStreamDestination);
 
@@ -368,6 +377,7 @@ export class AudioStreamManager {
     this.clearQueue();
     this.stopAudioFeedback();
     this.stopMicrophone();
+    this.masterCompressor.disconnect();
     if (this.audioTrack != null) {
       this.audioTrack.stop();
     }
