@@ -1,11 +1,6 @@
 // Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
-import {
-  LOGGER_PREFIX,
-  PLAYBACK_RATE_FACTOR,
-  MAX_PLAYBACK_RATE,
-  PLAYBACK_RATE_TARGET
-} from "../constants";
+import { LOGGER_PREFIX } from "../constants";
 import { isStringUndefinedNullEmpty } from "../utils/commonUtility";
 
 export class AudioStreamManager {
@@ -45,6 +40,11 @@ export class AudioStreamManager {
 
     this._playbackChain = Promise.resolve();
     this.customFeedbackBuffer = null;
+
+    this._chunkBuffer = [];
+    this._bufferFlushed = false;
+    this.BUFFER_TARGET_MS = 300;
+    this.BUFFER_TARGET_SAMPLES = (16000 * this.BUFFER_TARGET_MS) / 1000;
   }
 
   async startMicrophone(microphoneConstraints) {
@@ -249,9 +249,28 @@ export class AudioStreamManager {
   }
 
   playAudioBuffer(arrayBuffer, volume = 1.0) {
-    this._playbackChain = this._playbackChain.then(() =>
-      this._processChunk(arrayBuffer, volume)
-    )
+    const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
+    
+    this._chunkBuffer.push({ arrayBuffer, volume, samples: pcmData.length });
+
+    const totalSamples = this._chunkBuffer.reduce((sum, c) => sum + c.samples, 0);
+
+    if (!this._bufferFlushed && totalSamples >= this.BUFFER_TARGET_SAMPLES) {
+      this._bufferFlushed = true;
+      // Flush all buffered chunks then continue scheduling normally
+      for (const chunk of this._chunkBuffer) {
+        this._playbackChain = this._playbackChain.then(() =>
+          this._processChunk(chunk.arrayBuffer, chunk.volume)
+        );
+      }
+      this._chunkBuffer = [];
+    } else if (this._bufferFlushed) {
+      // Already playing, schedule directly
+      this._playbackChain = this._playbackChain.then(() =>
+        this._processChunk(arrayBuffer, volume)
+      );
+    }
+    // else: still buffering, just accumulate
   }
 
   async _processChunk(arrayBuffer, volume = 1.0) {
@@ -276,35 +295,22 @@ export class AudioStreamManager {
           gainNode.connect(this.masterCompressor);
 
           const now = this.audioContext.currentTime;
-          const aheadBy = (this.nextStartTime || now) - now;  // how far ahead scheduler is
-
-          // Adjust playback rate based on how far ahead we are
-          const rate = this._calculatePlaybackRate(aheadBy);
-          source.playbackRate.value = rate;
-
           const startAt = Math.max(this.nextStartTime || now, now);
+          const aheadBy = startAt - now;
+          source.playbackRate.value = 1.0; // always 1.0 — no pitch shift ever
           source.start(startAt);
+          this.nextStartTime = startAt + audioBuffer.duration;
 
-          this.nextStartTime = startAt + (audioBuffer.duration / rate);
-
-          // When utterance gap detected, resume audio feedback if enabled
           this.resetTimer = setTimeout(() => {
-              this.nextStartTime = 0;
+              this.nextStartTime = this.audioContext.currentTime;
+              this._bufferFlushed = false; // re-enable buffering for next utterance
+              this._chunkBuffer = [];
               if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
-          }, Math.max(500, aheadBy * 1000));
+          }, Math.max(500, aheadBy * 1000 + 500)); // wait until scheduled audio is actually done + 500ms grace period
+
       } catch (error) {
           console.error('Error playing audio buffer:', error);
       }
-  }
-
-  _calculatePlaybackRate(aheadBySeconds) {
-      if (aheadBySeconds <= PLAYBACK_RATE_TARGET) return 1.0;
-
-      // For every 0.1s ahead of PLAYBACK_RATE_TARGET, multiply rate by PLAYBACK_RATE_FACTOR
-      const unitsAhead = (aheadBySeconds - PLAYBACK_RATE_TARGET) / 0.1;
-      const rate = Math.pow(PLAYBACK_RATE_FACTOR, unitsAhead);
-
-      return Math.min(rate, MAX_PLAYBACK_RATE);
   }
 
   async processQueue() {
