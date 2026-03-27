@@ -142,6 +142,10 @@ class DeepLVoiceClient {
       body.enable_transcription = config.enableTranscription;
     }
 
+    if (config.early_access_experimental_mode !== undefined) {
+      body.early_access_experimental_mode = config.early_access_experimental_mode;
+    }
+
     // Log TTS provider selection
     const usingElevenLabs = body.early_access_experimental_mode === 'use_external_speech_provider';
     console.log(`🚀 Requesting ${this.type} session with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
