@@ -253,20 +253,17 @@ export class AudioStreamManager {
       this.stopAudioFeedback();
 
       const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
-      const floatData = new Float32Array(pcmData.length);
+      let floatData = new Float32Array(pcmData.length);
       for (let i = 0; i < pcmData.length; i++) {
         floatData[i] = pcmData[i] / 32768.0;
       }
 
       const nativeRate = this.audioContext.sampleRate;
       const sourceRate = 16000;
-      const resampledData = this._resample_audio(floatData, nativeRate, sourceRate)
-      if (!resampledData) {
-        return
-      }
+      floatData = this._resample_audio(floatData, nativeRate, sourceRate)
 
-      const audioBuffer = this.audioContext.createBuffer(1, resampledData.length, nativeRate);
-      audioBuffer.getChannelData(0).set(resampledData);
+      const audioBuffer = this.audioContext.createBuffer(1, floatData.length, this.audioContext.sampleRate);
+      audioBuffer.getChannelData(0).set(floatData);
 
       const source = this.audioContext.createBufferSource();
       const gainNode = this.audioContext.createGain();
