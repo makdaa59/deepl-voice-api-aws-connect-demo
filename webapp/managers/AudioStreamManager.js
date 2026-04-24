@@ -258,10 +258,6 @@ export class AudioStreamManager {
         floatData[i] = pcmData[i] / 32768.0;
       }
 
-      const nativeRate = this.audioContext.sampleRate;
-      const sourceRate = 16000;
-      floatData = this._resample_audio(floatData, nativeRate, sourceRate)
-
       const audioBuffer = this.audioContext.createBuffer(1, floatData.length, this.audioContext.sampleRate);
       audioBuffer.getChannelData(0).set(floatData);
 
@@ -292,37 +288,6 @@ export class AudioStreamManager {
 
     } catch (error) {
       console.error('Error playing audio buffer:', error);
-    }
-  }
-
-  _resample_audio(floatData, nativeRate, sourceRate) {
-    if (nativeRate == sourceRate) {
-      return floatData
-    }
-    try { 
-      const ratio = nativeRate / sourceRate;
-      const outLength = Math.round(floatData.length * ratio);
-      let resampledData = new Float32Array(outLength);
-      for (let i = 0; i < outLength; i++) {
-        const srcIdx = i / ratio;
-        const idx1 = Math.floor(srcIdx);
-        const frac = srcIdx - idx1;
-        const idx0 = Math.max(idx1 - 1, 0);
-        const idx2 = Math.min(idx1 + 1, floatData.length - 1);
-        const idx3 = Math.min(idx1 + 2, floatData.length - 1);
-        const p0 = floatData[idx0];
-        const p1 = floatData[idx1];
-        const p2 = floatData[idx2];
-        const p3 = floatData[idx3];
-        const c1 = 0.5 * (p2 - p0);
-        const c2 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
-        const c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
-        resampledData[i] = ((c3 * frac + c2) * frac + c1) * frac + p1;
-      }
-      return resampledData;
-    } catch (err) {
-      console.error('Error resampling audio:', err);
-      return null;
     }
   }
 
