@@ -1,13 +1,14 @@
 // Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 import { LOGGER_PREFIX } from "../constants";
+import { AUDIO_INGEST_SAMPLE_RATE } from "../constants";
 
 const INTERACTION_EVENTS = ["click", "touchstart", "keydown"];
 
 // SPDX-License-Identifier: MIT-0
 export class AudioContextManager {
   constructor() {
-    this.audioContext = new AudioContext({ sampleRate: 16000 })
+    this.audioContext = new AudioContext({ sampleRate: AUDIO_INGEST_SAMPLE_RATE })
     this.interactionPromise = null;
     this.isWaitingForInteraction = this.audioContext.state === "suspended"; // AudioContext is suspended until the user makes an interaction with the webpage
     this.setupUserInteractionListeners();

@@ -289,8 +289,10 @@ class DeepLVoiceClient {
         const update = message.source_transcript_update;
 
         if (update.concluded && update.concluded.length > 0) {
+            const audioStartTime = update.concluded[0].start_time;
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
+            const language = update.concluded[0].language;
 
             this.audioLatencyTrackManager.enqueueTranscription(this.type, receiveTime, audioEndTime);
 
@@ -300,6 +302,8 @@ class DeepLVoiceClient {
                     .join('');
                 console.log(`[${this.type}] 📝 Transcription: "${concludedText}"`);
                 this.onTranscription(concludedText);
+                this.audioLatencyTrackManager.onConcludedSourceTexts(
+                  this.type, concludedText, audioStartTime, audioEndTime, language);
             }
           }
       }
@@ -307,8 +311,10 @@ class DeepLVoiceClient {
         const update = message.target_transcript_update;
 
         if (update.concluded && update.concluded.length > 0) {
+            const audioStartTime = update.concluded[0].start_time;
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
+            const language = update.language;
 
             this.audioLatencyTrackManager.enqueueTranslation(this.type, receiveTime, audioEndTime);
 
@@ -318,7 +324,8 @@ class DeepLVoiceClient {
                     .join('');
                 console.log(`[${this.type}] 🌐 Translation: "${concludedText}"`);
                 this.onTranslation(concludedText);
-
+                this.audioLatencyTrackManager.onConcludedTargetTexts(
+                  this.type, concludedText, audioStartTime, audioEndTime, language);
             }
         }
       }
@@ -332,6 +339,9 @@ class DeepLVoiceClient {
               this.onAudio(data);
           }
           this.audioLatencyTrackManager.enqueueSynthesis(this.type, receiveTime);
+          if (update.text) {
+            this.audioLatencyTrackManager.onAudioWithText(this.type, update.text)
+          }
         }
       }
       else if (message.end_of_source_transcript) {
@@ -430,8 +440,6 @@ class DeepLVoiceClient {
                 const chunkToSend = buffer.slice(0, chunkSize);
                 buffer = buffer.slice(chunkSize);
                 totalChunksSent++;
-
-                this.audioLatencyTrackManager.enqueueAudio(this.type, chunkToSend, performance.now());
                 this.sendAudio(chunkToSend);
             }
 
@@ -499,6 +507,9 @@ class DeepLVoiceClient {
         });
 
         this.ws.send(payload);
+        const now = Date.now() / 1000;
+        this.audioLatencyTrackManager.enqueueAudio(this.type, audioBuffer, performance.now());
+        this.audioLatencyTrackManager.frameTimers[this.type].addFrame(now)
     } catch (error) {
         console.error(`[${this.type}] ❌ Error sending audio chunk:`, error);
     }

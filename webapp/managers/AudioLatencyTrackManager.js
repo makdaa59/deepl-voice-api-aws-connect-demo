@@ -5,11 +5,38 @@ import {
     TURN_LATENCY_MAX_MS_GOOD,
     TURN_LATENCY_MAX_MS_OK,
     AUDIO_INGEST_SAMPLE_RATE,
+    BUFFER_LEN
 } from "../constants";
+import { endsWithEOSPunctuation } from "../utils/commonUtility";
+import { FrameTimer } from "./FrameTimerManager";
 
 
 export class AudioLatencyTrackManager {
     constructor() {
+        this.frameTimers = {
+            customer: new FrameTimer({
+                chunkSize: BUFFER_LEN,
+                sampleRate: AUDIO_INGEST_SAMPLE_RATE,
+
+            }),
+            agent: new FrameTimer({
+                chunkSize: BUFFER_LEN,
+                sampleRate: AUDIO_INGEST_SAMPLE_RATE,
+
+            })            
+        };
+        this.concludedSourceTexts = {
+            customer: [],
+            agent: []
+        };
+        this.concludedTargetTexts = {
+            customer: [],
+            agent: []
+        };
+        this.audioTexts = {
+            customer: [],
+            agent: []
+        };
 
         // Track chunks with their cumulative audio time
         this.customerAudioChunks = [];  // { sentAt, audioStartMs, audioEndMs }
@@ -44,6 +71,10 @@ export class AudioLatencyTrackManager {
         this.lastAgentSynthesizedAudio = null;
         this.agentSpeaking = false;
 
+        this.firstVoiceToFirstSyntheisLatencies = {
+            customer: [],
+            agent: []
+        }
         this.customerSynthesisToAgentSynthesisLatencies = [];
         this.agentSynthesisToCustomerSynthesisLatencies = [];
         this.customerSynthesisToAgentVoiceLatencies = [];
@@ -58,6 +89,121 @@ export class AudioLatencyTrackManager {
         const { port1, port2 } = new MessageChannel();
         this._port = port1;
         port2.onmessage = () => this._drain();
+        
+        this.audioTextSync('customer')
+        this.audioTextSync('agent')
+    }
+
+    onConcludedSourceTexts(type, text, startTime, endTime, language) {
+        this.concludedSourceTexts[type].push({
+            text, startTime, endTime, language
+        })
+    }
+    onConcludedTargetTexts(type, text, startTime, endTime, language) {
+        this.concludedTargetTexts[type].push({
+            text, startTime, endTime, language
+        })
+    }
+    onAudioWithText(type, text) {
+        const receiveTime = Date.now() / 1000;
+        this.audioTexts[type].push({
+            text, receiveTime
+        })
+    }
+
+    async audioTextSync(type) {
+        while (true) {
+            try {
+                const { lastAudioTextIndex, audioTexts } = this.findFullAudioTextSentence(type)
+                if (!audioTexts) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    continue;
+                }
+
+                const {
+                    lastTargetIndex, targetLang, targetTexts, sourceStartTime, sourceEndTime
+                } = this.matchConcludedTargetTexts(type, audioTexts);
+                if (!targetTexts) {
+                    console.error(`failed to sync audio to text for ${type}`);
+                    break;
+                }
+
+                const { lastSourceIndex, sourceLang, sourceTexts } = this.matchSourceTexts(type, sourceStartTime, sourceEndTime)
+
+                const firstAudioTs = this.audioTexts[type][0].receiveTime;
+                const sourceStartTs = await this.frameTimers[type].getClosestBefore(sourceStartTime / 1000);
+                const latencyMs = (firstAudioTs - sourceStartTs) * 1000;
+                console.log('translation latency', {
+                    sourceLang,
+                    targetLang,
+                    sourceTexts,
+                    targetTexts,
+                    latencyMs
+                });
+
+                this.audioTexts[type] = this.audioTexts[type].slice(lastAudioTextIndex + 1);
+                this.concludedTargetTexts[type] = this.concludedTargetTexts[type].slice(lastTargetIndex + 1);
+                this.concludedSourceTexts[type] = this.concludedSourceTexts[type].slice(lastSourceIndex + 1)
+                
+                if (0 < latencyMs < 100000) {
+                    this._pushLatency(
+                        this.firstVoiceToFirstSyntheisLatencies[type],
+                        latencyMs,
+                        `${type}-latency-${type}VoiceToSynthesis`
+                    );
+                }
+                
+            } catch (err) {
+                console.error(err)
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    findFullAudioTextSentence(type) {
+        let audioTexts = '';
+        for (const [lastAudioTextIndex, audioText] of this.audioTexts[type].entries()) {
+            audioTexts += audioText.text;
+            if (endsWithEOSPunctuation(audioTexts)) {
+                return { lastAudioTextIndex, audioTexts };
+            }
+        }
+        return { lastAudioTextIndex: null, audioTexts: null };
+    }
+
+    matchConcludedTargetTexts(type, text) {
+        let targetTexts = '';
+        let sourceStartTime = Infinity;
+        let sourceEndTime = -Infinity;
+        for (const [lastTargetIndex, concludedTargetText] of this.concludedTargetTexts[type].entries()) {
+            console.log('concludedTargetText: ', concludedTargetText)
+            if (text.includes(concludedTargetText.text)) {
+                targetTexts += concludedTargetText.text;
+                sourceStartTime = Math.min(concludedTargetText.startTime, sourceStartTime);
+                sourceEndTime = Math.max(concludedTargetText.endTime, sourceEndTime);
+            }
+            if (targetTexts == text) {
+                const targetLang = concludedTargetText.language;
+                return { lastTargetIndex, targetLang, targetTexts, sourceStartTime, sourceEndTime}
+            }
+        }
+        console.error(
+            `matching concluded target texts not found. targetTexts=${targetTexts} text=${text}`
+        );
+        return { lastTargetIndex: null, targetLang: null, targetTexts, sourceStartTime, sourceEndTime}
+    }
+
+    matchSourceTexts(type, sourceStartTime, sourceEndTime) {
+        let sourceTexts = '';
+        let sourceLang, lastSourceIndex;
+        for (const [i, concludedSourceText] of this.concludedSourceTexts[type].entries()) {
+            if (concludedSourceText.startTime >= sourceStartTime && concludedSourceText.endTime <= sourceEndTime) {
+                lastSourceIndex = i;
+                sourceLang = concludedSourceText.language;
+                sourceTexts += concludedSourceText.text;
+            }
+        }
+        return { lastSourceIndex, sourceLang, sourceTexts }
     }
 
     enqueueAudio(type, buffer, timestamp) {
@@ -387,6 +533,10 @@ export class AudioLatencyTrackManager {
   }
 
   resetLatencyTracking(type) {
+    this.frameTimers[type].reset()
+    this.concludedSourceTexts[type] = [];
+    this.concludedTargetTexts[type] = [];
+    this.audioTexts[type] = [];
     if (type === 'customer') {
       this.customerAudioChunks = [];
       this.customerCumulativeAudioTime = 0;
@@ -399,7 +549,8 @@ export class AudioLatencyTrackManager {
       this.firstCustomerVoiceDetected = null;
       this.lastCustomerVoiceDetected = null;
       this.lastCustomerSynthesizedAudio = null;
-    } else if (type === 'agent') {
+    } 
+    if (type === 'agent') {
       this.agentAudioChunks = [];
       this.agentCumulativeAudioTime = 0;
       this.agentConcludedTargetTranscriptTimes = [];
