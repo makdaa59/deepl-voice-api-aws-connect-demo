@@ -340,7 +340,7 @@ class DeepLVoiceClient {
           }
           this.audioLatencyTrackManager.enqueueSynthesis(this.type, receiveTime);
           if (update.text) {
-            this.audioLatencyTrackManager.onAudioWithText(this.type, update.text)
+            this.audioLatencyTrackManager.onAudioWithText(this.type, update.text);
           }
         }
       }

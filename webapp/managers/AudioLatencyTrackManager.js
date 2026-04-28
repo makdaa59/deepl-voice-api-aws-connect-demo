@@ -17,12 +17,10 @@ export class AudioLatencyTrackManager {
             customer: new FrameTimer({
                 chunkSize: BUFFER_LEN,
                 sampleRate: AUDIO_INGEST_SAMPLE_RATE,
-
             }),
             agent: new FrameTimer({
                 chunkSize: BUFFER_LEN,
                 sampleRate: AUDIO_INGEST_SAMPLE_RATE,
-
             })            
         };
         this.concludedSourceTexts = {
@@ -97,24 +95,24 @@ export class AudioLatencyTrackManager {
     onConcludedSourceTexts(type, text, startTime, endTime, language) {
         this.concludedSourceTexts[type].push({
             text, startTime, endTime, language
-        })
+        });
     }
     onConcludedTargetTexts(type, text, startTime, endTime, language) {
         this.concludedTargetTexts[type].push({
             text, startTime, endTime, language
-        })
+        });
     }
     onAudioWithText(type, text) {
         const receiveTime = Date.now() / 1000;
         this.audioTexts[type].push({
             text, receiveTime
-        })
+        });
     }
 
     async audioTextSync(type) {
         while (true) {
             try {
-                const { lastAudioTextIndex, audioTexts } = this.findFullAudioTextSentence(type)
+                const { lastAudioTextIndex, audioTexts } = this.findFullAudioTextSentence(type);
                 if (!audioTexts) {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     continue;
@@ -128,7 +126,7 @@ export class AudioLatencyTrackManager {
                     break;
                 }
 
-                const { lastSourceIndex, sourceLang, sourceTexts } = this.matchSourceTexts(type, sourceStartTime, sourceEndTime)
+                const { lastSourceIndex, sourceLang, sourceTexts } = this.matchSourceTexts(type, sourceStartTime, sourceEndTime);
 
                 const firstAudioTs = this.audioTexts[type][0].receiveTime;
                 const sourceStartTs = await this.frameTimers[type].getClosestBefore(sourceStartTime / 1000);
@@ -143,7 +141,7 @@ export class AudioLatencyTrackManager {
 
                 this.audioTexts[type] = this.audioTexts[type].slice(lastAudioTextIndex + 1);
                 this.concludedTargetTexts[type] = this.concludedTargetTexts[type].slice(lastTargetIndex + 1);
-                this.concludedSourceTexts[type] = this.concludedSourceTexts[type].slice(lastSourceIndex + 1)
+                this.concludedSourceTexts[type] = this.concludedSourceTexts[type].slice(lastSourceIndex + 1);
                 
                 if (0 < latencyMs < 100000) {
                     this._pushLatency(
@@ -154,7 +152,7 @@ export class AudioLatencyTrackManager {
                 }
                 
             } catch (err) {
-                console.error(err)
+                console.error(err);
             }
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
@@ -176,7 +174,6 @@ export class AudioLatencyTrackManager {
         let sourceStartTime = Infinity;
         let sourceEndTime = -Infinity;
         for (const [lastTargetIndex, concludedTargetText] of this.concludedTargetTexts[type].entries()) {
-            console.log('concludedTargetText: ', concludedTargetText)
             if (text.includes(concludedTargetText.text)) {
                 targetTexts += concludedTargetText.text;
                 sourceStartTime = Math.min(concludedTargetText.startTime, sourceStartTime);
@@ -184,13 +181,13 @@ export class AudioLatencyTrackManager {
             }
             if (targetTexts == text) {
                 const targetLang = concludedTargetText.language;
-                return { lastTargetIndex, targetLang, targetTexts, sourceStartTime, sourceEndTime}
+                return { lastTargetIndex, targetLang, targetTexts, sourceStartTime, sourceEndTime };
             }
         }
         console.error(
             `matching concluded target texts not found. targetTexts=${targetTexts} text=${text}`
         );
-        return { lastTargetIndex: null, targetLang: null, targetTexts, sourceStartTime, sourceEndTime}
+        return { lastTargetIndex: null, targetLang: null, targetTexts, sourceStartTime, sourceEndTime };
     }
 
     matchSourceTexts(type, sourceStartTime, sourceEndTime) {
@@ -203,7 +200,7 @@ export class AudioLatencyTrackManager {
                 sourceTexts += concludedSourceText.text;
             }
         }
-        return { lastSourceIndex, sourceLang, sourceTexts }
+        return { lastSourceIndex, sourceLang, sourceTexts };
     }
 
     enqueueAudio(type, buffer, timestamp) {
@@ -533,7 +530,7 @@ export class AudioLatencyTrackManager {
   }
 
   resetLatencyTracking(type) {
-    this.frameTimers[type].reset()
+    this.frameTimers[type].reset();
     this.concludedSourceTexts[type] = [];
     this.concludedTargetTexts[type] = [];
     this.audioTexts[type] = [];
