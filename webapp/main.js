@@ -790,8 +790,15 @@ async function captureFromCustomerAudioStream() {
 }
 
 async function customerStartSession(audioLatencyTrackManager) {
-  // Get current environment setting (default to 'prod')
-  const environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+  // Get current environment setting (default to 'prod'), validate it
+  let environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+
+  // Validate environment value from localStorage
+  if (environment !== 'dev' && environment !== 'prod') {
+    console.warn(`Invalid environment value in localStorage: "${environment}". Defaulting to "prod".`);
+    environment = 'prod';
+    localStorage.setItem('deepl_environment', 'prod');
+  }
 
   DeepLVoiceClientCustomer = new DeepLVoiceClient({
     type: "customer",
@@ -833,8 +840,15 @@ async function customerStartSession(audioLatencyTrackManager) {
 }
 
 async function agentStartSession(audioLatencyTrackManager) {
-  // Get current environment setting (default to 'prod')
-  const environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+  // Get current environment setting (default to 'prod'), validate it
+  let environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+
+  // Validate environment value from localStorage
+  if (environment !== 'dev' && environment !== 'prod') {
+    console.warn(`Invalid environment value in localStorage: "${environment}". Defaulting to "prod".`);
+    environment = 'prod';
+    localStorage.setItem('deepl_environment', 'prod');
+  }
 
   DeepLVoiceClientAgent = new DeepLVoiceClient({
     type: "agent",
@@ -1548,7 +1562,15 @@ function initEnvironmentSelector() {
   environmentSelector.classList.remove('hidden');
 
   // Load saved environment preference from localStorage (default to 'prod')
-  const savedEnvironment = localStorage.getItem('deepl_environment') || 'prod';
+  let savedEnvironment = localStorage.getItem('deepl_environment') || 'prod';
+
+  // Validate environment value from localStorage
+  if (savedEnvironment !== 'dev' && savedEnvironment !== 'prod') {
+    console.warn(`Invalid environment value in localStorage: "${savedEnvironment}". Resetting to "prod".`);
+    savedEnvironment = 'prod';
+    localStorage.setItem('deepl_environment', 'prod');
+  }
+
   const initialApiUrl = savedEnvironment === 'dev'
     ? 'https://api-dev.deepl.com'
     : 'https://api.deepl.com';

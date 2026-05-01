@@ -23,6 +23,10 @@ On a high-level, the solution consists of the following components, each contain
 - AWS Account
 - [AWS IAM user](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html) with Administrator permissions
 - Amazon Connect instance
+- **DeepL API Keys**: You will need DeepL API keys for both environments:
+  - **Production API Key** (`DEEPL_API_KEY`) - for production use
+  - **Development API Key** (`DEEPL_DEV_API_KEY`) - for development/testing
+  - These must be configured as Lambda environment variables (see step 5a below)
 - [Node](https://nodejs.org/) (v20) and [NPM](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) (v10) installed and configured on your computer
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html) (v2) installed and configured on your computer
 - [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) (v2) installed and configured on your computer
@@ -85,6 +89,26 @@ These instructions assume you have completed all the prerequisites, and you have
    - AWS CDK output will be provided in your Terminal. You should see the Amazon Cognito User Pool Id as `userPoolId` from your Backend stack,
      and Amazon CloudFront Distribution URL as `webAppURL` from your Frontend stack.
      **Save these values as you will be using them in the next few steps.**
+
+5a. Configure DeepL API Keys for Lambda Functions
+
+   - The demo uses Lambda functions (`deepl-v2v-request-session` and `deepl-v2v-get-languages`) to proxy requests to the DeepL API
+   - These Lambda functions require environment variables for API keys
+   - **Configure via AWS Console:**
+     1. Open [AWS Lambda Console](https://console.aws.amazon.com/lambda)
+     2. Select the `deepl-v2v-request-session` function
+     3. Go to **Configuration** → **Environment variables** → **Edit**
+     4. Add the following environment variables:
+        - Key: `DEEPL_API_KEY`, Value: `[your production DeepL API key]`
+        - Key: `DEEPL_DEV_API_KEY`, Value: `[your development DeepL API key]`
+     5. Click **Save**
+   - **Or configure via AWS CLI:**
+     ```bash
+     aws lambda update-function-configuration \
+       --function-name deepl-v2v-request-session \
+       --environment "Variables={DEEPL_API_KEY=your-prod-key,DEEPL_DEV_API_KEY=your-dev-key}"
+     ```
+   - **Environment Switching:** The demo supports switching between dev and prod environments in debug mode (`?debug=true`). Production environment is used by default.
 
 6. Configure Amazon Connect Approved Origins
 

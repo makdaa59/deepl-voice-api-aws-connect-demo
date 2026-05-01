@@ -13,6 +13,16 @@ export const handler = async (event) => {
   // Get environment from request body, default to 'prod'
   const environment = body?.environment || 'prod';
 
+  // Validate environment parameter
+  if (environment !== 'dev' && environment !== 'prod') {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        error: 'Invalid environment parameter. Must be "dev" or "prod".'
+      })
+    };
+  }
+
   // Determine API URL and key based on environment
   const apiBaseUrl = environment === 'dev'
     ? 'https://api-dev.deepl.com'
