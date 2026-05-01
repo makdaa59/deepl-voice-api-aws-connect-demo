@@ -9,7 +9,8 @@ class DeepLVoiceClient {
     this.type = options.type; // "agent" or "customer"
     this.baseUrl = options.baseUrl || "https://api.deepl.com";
     this.getLanguagesProxy = options.getLanguagesProxy || import.meta.env.VITE_GET_LANGUAGES_PROXY || "https://wjjabkvfyvqxqpizezx7jdsqny0hrpsa.lambda-url.eu-west-2.on.aws/"
-    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://uexiwsmey6vz43rr3szwu6udeq0jotax.lambda-url.eu-west-2.on.aws/";
+    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://uexiwsmey6vz43rr3szwu6udeq0jotax.lambda-url.eu-west-2.on.aws/"
+    this.environment = options.environment || 'prod';
 
     this.ws = null;
     this.streamingUrl = null;
@@ -78,7 +79,7 @@ class DeepLVoiceClient {
     //       'Content-Type': 'application/json',
     //       'Accept': 'application/json',
     //     },
-    //     body: JSON.stringify({ type }),
+    //     body: JSON.stringify({ type, environment: this.environment }),
     //   });
     //
     //   if (!response.ok) {
@@ -94,6 +95,18 @@ class DeepLVoiceClient {
     //   }
     //   throw error;
     // }
+  }
+
+  /**
+   * Set the DeepL API environment
+   * @param {string} environment - 'dev' or 'prod'
+   */
+  setEnvironment(environment) {
+    if (environment !== 'dev' && environment !== 'prod') {
+      throw new Error('Environment must be "dev" or "prod"');
+    }
+    this.environment = environment;
+    console.log(`${this.type} client environment set to: ${environment.toUpperCase()}`);
   }
 
   /**
@@ -146,9 +159,12 @@ class DeepLVoiceClient {
       body.early_access_experimental_mode = config.early_access_experimental_mode;
     }
 
+    // Add environment to request body
+    body.environment = this.environment;
+
     // Log TTS provider selection
     const usingElevenLabs = body.early_access_experimental_mode === 'use_external_speech_provider';
-    console.log(`🚀 Requesting ${this.type} session with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
+    console.log(`🚀 Requesting ${this.type} session [${this.environment.toUpperCase()}] with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
     console.log('Session request body:', JSON.stringify(body, null, 2));
 
     try {

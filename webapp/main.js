@@ -790,8 +790,12 @@ async function captureFromCustomerAudioStream() {
 }
 
 async function customerStartSession(audioLatencyTrackManager) {
+  // Get current environment setting (default to 'prod')
+  const environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+
   DeepLVoiceClientCustomer = new DeepLVoiceClient({
     type: "customer",
+    environment: environment,
     audioLatencyTrackManager: audioLatencyTrackManager,
     onTranscription: handleCustomerTranscript,
     onTranslation: handleCustomerTranslateText,
@@ -829,8 +833,12 @@ async function customerStartSession(audioLatencyTrackManager) {
 }
 
 async function agentStartSession(audioLatencyTrackManager) {
+  // Get current environment setting (default to 'prod')
+  const environment = localStorage.getItem('deepl_environment') || window.DEEPL_ENVIRONMENT || 'prod';
+
   DeepLVoiceClientAgent = new DeepLVoiceClient({
     type: "agent",
+    environment: environment,
     audioLatencyTrackManager: audioLatencyTrackManager,
     onTranscription: handleAgentTranscript,
     onTranslation: handleAgentTranslateText,
@@ -1518,4 +1526,77 @@ function initDebugDashboard() {
   }).catch(error => {
     console.error('❌ Failed to load debug dashboard:', error);
   });
+
+  // Initialize environment selector in debug mode
+  initEnvironmentSelector();
+}
+
+/**
+ * Initialize the environment selector (only shown in debug mode)
+ * Allows switching between dev and prod DeepL API environments
+ */
+function initEnvironmentSelector() {
+  const environmentSelector = document.getElementById('environmentSelector');
+  const environmentSelect = document.getElementById('environmentSelect');
+
+  if (!environmentSelector || !environmentSelect) {
+    console.error('Environment selector elements not found');
+    return;
+  }
+
+  // Show the environment selector in debug mode
+  environmentSelector.classList.remove('hidden');
+
+  // Load saved environment preference from localStorage (default to 'prod')
+  const savedEnvironment = localStorage.getItem('deepl_environment') || 'prod';
+  const initialApiUrl = savedEnvironment === 'dev'
+    ? 'https://api-dev.deepl.com'
+    : 'https://api.deepl.com';
+
+  environmentSelect.value = savedEnvironment;
+  console.log(`🌍 Environment initialized: ${savedEnvironment.toUpperCase()}`);
+  console.log(`   → API URL: ${initialApiUrl}`);
+  console.log(`   → API Key: DEEPL_${savedEnvironment.toUpperCase()}_API_KEY`);
+
+  // Apply initial environment to clients if they exist
+  updateClientsEnvironment(savedEnvironment);
+
+  // Handle environment changes
+  environmentSelect.addEventListener('change', (event) => {
+    const newEnvironment = event.target.value;
+    const apiUrl = newEnvironment === 'dev'
+      ? 'https://api-dev.deepl.com'
+      : 'https://api.deepl.com';
+
+    localStorage.setItem('deepl_environment', newEnvironment);
+    console.log(`🔄 Environment switched to: ${newEnvironment.toUpperCase()}`);
+    console.log(`   → API URL: ${apiUrl}`);
+    console.log(`   → API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY`);
+    console.log(`   → Note: Active sessions continue with previous environment. New sessions will use ${newEnvironment.toUpperCase()}.`);
+
+    // Update all DeepL clients
+    updateClientsEnvironment(newEnvironment);
+
+    // Show confirmation to user
+    alert(`Environment switched to ${newEnvironment.toUpperCase()}\n\n` +
+          `API URL: ${apiUrl}\n` +
+          `API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY\n\n` +
+          `Note: Active sessions will continue using the previous environment.\n` +
+          `New sessions will use ${newEnvironment.toUpperCase()}.`);
+  });
+}
+
+/**
+ * Update the environment for all DeepL clients
+ * @param {string} environment - 'dev' or 'prod'
+ */
+function updateClientsEnvironment(environment) {
+  if (DeepLVoiceClientAgent) {
+    DeepLVoiceClientAgent.setEnvironment(environment);
+  }
+  if (DeepLVoiceClientCustomer) {
+    DeepLVoiceClientCustomer.setEnvironment(environment);
+  }
+  // Store globally for new client initialization
+  window.DEEPL_ENVIRONMENT = environment;
 }
