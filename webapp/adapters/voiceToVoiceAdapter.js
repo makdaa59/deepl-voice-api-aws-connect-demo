@@ -1,4 +1,4 @@
-import { getTranscribeAudioStream } from "../utils/transcribeUtils";
+import { getDeepLVoiceStream } from "../utils/transcribeUtils";
 import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
 import { ConnectionHealthMonitor } from "../managers/ConnectionHealthMonitor.js";
 import { AUDIO_INGEST_SAMPLE_RATE, BUFFER_LEN } from "../constants.js";
@@ -436,7 +436,7 @@ class DeepLVoiceClient {
 
         console.log(`[${this.type}] 🎬 streamAudio started - chunkSize: ${chunkSize} bytes (${(chunkSize / (targetSampleRate * 2) * 1000).toFixed(0)}ms @ ${targetSampleRate}Hz)`);
 
-        for await (const audioEvent of getTranscribeAudioStream(audioStream, sampleRate)) {
+        for await (const audioEvent of getDeepLVoiceStream(audioStream, sampleRate)) {
             // Stop streaming if we've been disconnected (e.g., call ended)
             if (!this.shouldReconnect) {
                 console.log(`[${this.type}] 🛑 Stopping audio stream - call disconnected`);

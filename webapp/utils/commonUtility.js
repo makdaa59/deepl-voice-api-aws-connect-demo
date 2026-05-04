@@ -140,6 +140,21 @@ export function isDebugMode() {
   return debugParam === 'true';
 }
 
+/**
+ * Check if evaluate mode is enabled via URL parameter (?evaluate=true)
+ * Used for scoring translation accuracy, currently requires external service
+ * @returns {boolean}
+ */
+export function isEvaluateMode() {
+  const evaluateParam = getQueryStringValueByKey('evaluate');
+  return evaluateParam === 'true';
+}
+
+export function isAWSMode() {
+  const evaluateParam = getQueryStringValueByKey('aws');
+  return evaluateParam === 'true';
+}
+
 const eosPunctuation = [
   // Latin
   '\u0021', '\u002E', '\u003F',
@@ -194,6 +209,11 @@ const eosPunctuation = [
 
 const EOS_REGEX = new RegExp(`[${eosPunctuation}]\\s*$`, 'u');
 
+/**
+ * Checks whether a sting of text ends in end of sentence punctuation
+ * @param {string} text 
+ * @returns {boolean}
+ */
 export function endsWithEOSPunctuation(text) {
     return EOS_REGEX.test(text);
 }

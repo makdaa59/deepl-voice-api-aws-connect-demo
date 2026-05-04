@@ -25,8 +25,8 @@ export async function createMicrophoneStream(microphoneConstraints) {
   return micStream;
 }
 
-export const getTranscribeMicStream = async function* (amazonTranscribeMicStream, sampleRate) {
-  for await (const chunk of amazonTranscribeMicStream) {
+export const getDeepLVoiceStream = async function* (audioStream, sampleRate) {
+  for await (const chunk of audioStream) {
     if (chunk.length <= sampleRate) {
       const encodedChunk = encodePCMChunk(chunk);
       yield {
@@ -38,8 +38,9 @@ export const getTranscribeMicStream = async function* (amazonTranscribeMicStream
   }
 };
 
-export const getTranscribeAudioStream = async function* (amazonTranscribeAudioStream, sampleRate) {
-  for await (const chunk of amazonTranscribeAudioStream) {
+export const getAWSCustomerStream = async function* (audioStream, sampleRate, onSessionStart) {
+  let sessionStarted = false;
+  for await (const chunk of audioStream) {
     if (chunk.length <= sampleRate) {
       const encodedChunk = encodePCMChunk(chunk);
       yield {
@@ -47,6 +48,30 @@ export const getTranscribeAudioStream = async function* (amazonTranscribeAudioSt
           AudioChunk: encodedChunk,
         },
       };
+      if (!sessionStarted) {
+        const now = Date.now() / 1000;
+        onSessionStart(now);
+        sessionStarted = true;
+      }
+    }
+  }
+};
+
+export const getAWSAgentStream = async function* (audioStream, sampleRate, onSessionStart) {
+  let sessionStarted = false;
+  for await (const chunk of audioStream) {
+    if (chunk.length <= sampleRate) {
+      const encodedChunk = encodePCMChunk(chunk);
+      yield {
+        AudioEvent: {
+          AudioChunk: encodedChunk,
+        },
+      };
+      if (!sessionStarted) {
+        const now = Date.now() / 1000;
+        onSessionStart(now);
+        sessionStarted = true;
+      }
     }
   }
 };
