@@ -98,6 +98,7 @@ export class AudioLatencyTrackManager {
 
         // AWS latency tracking - only used when comapairing AWS services
         this.awsSessionStartTimes = { customer: null, agent: null };
+        this.awsResults = { customer: [], agent: [] };
         this.awsFirstVoiceToFirstSyntheisLatencies = {
             customer: [],
             agent: []
@@ -125,16 +126,23 @@ export class AudioLatencyTrackManager {
         type, sourceLang, targetLang, sourceTexts, targetTexts, sourceStartTime, receiveTime
     }) {
         const sessionStart = this.awsSessionStartTimes[type];
-        if (!sessionStart || sourceStartTime == null) {
-            console.warn(
-                'missing session start or sourceStartTime',
-                { sessionStart, sourceStartTime }
-            );
+        this.awsResults[type].push({ sourceLang, targetLang, sourceTexts, targetTexts, sourceStartTime, receiveTime })
+        if (!endsWithEOSPunctuation(sourceTexts)) {
             return;
         }
-        const sourceWallClockTime = sessionStart + sourceStartTime;
-        const latencySec = receiveTime - sourceWallClockTime;
-        const latencyMs = latencySec * 1000;
+        const awsResults = this.awsResults[type];
+        this.awsResults[type] = [];
+
+        sourceTexts = awsResults.map(result => result.sourceTexts).join(' ');
+        targetTexts = awsResults.map(result => result.targetTexts).join(' ');
+        sourceStartTime = awsResults[0].sourceStartTime;
+        receiveTime = awsResults[0].receiveTime;
+        let latencyMs, latencySec;
+        if (sourceStartTime) {
+            const sourceWallClockTime = sessionStart + sourceStartTime;
+            latencySec = receiveTime - sourceWallClockTime;
+            latencyMs = latencySec * 1000;
+        }
         console.log('aws latency', {
             sourceLang,
             targetLang,
@@ -145,11 +153,13 @@ export class AudioLatencyTrackManager {
         if (latencyMs > 100000) {
             return;
         }
-        this._pushLatency(
-            this.awsFirstVoiceToFirstSyntheisLatencies[type],
-            latencyMs,
-            `${type}-latency-${type}AWSVoiceToSynthesis`
-        );
+        if (latencyMs) {
+            this._pushLatency(
+                this.awsFirstVoiceToFirstSyntheisLatencies[type],
+                latencyMs,
+                `${type}-latency-${type}AWSVoiceToSynthesis`
+            );
+        }
         if (this.evaluate) {
             await this._evaluateTranslations(
                 { api: 'AWS', sourceLang, targetLang, sourceTexts, targetTexts, latencySec }

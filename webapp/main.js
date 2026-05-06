@@ -1124,6 +1124,12 @@ async function toggleAgentTranscriptionMute() {
       CCP_V2V.UI.agentMuteTranscriptionButton.textContent = IsAgentTranscriptionMuted ? "Unmute" : "Mute";
     }
   }
+  if (AmazonTranscribeToCustomerAudioStream) {
+    const audioTrack = AmazonTranscribeToCustomerAudioStream.stream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+    }
+  }
 }
 
 async function loadTranslateLanguageCodes() {
