@@ -16,6 +16,7 @@
     "vite-plugin-static-copy": "^2.2.0"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.1045.0",
     "@aws-sdk/client-polly": "^3.687.0",
     "@aws-sdk/client-transcribe-streaming": "^3.687.0",
     "@aws-sdk/client-translate": "^3.687.0",

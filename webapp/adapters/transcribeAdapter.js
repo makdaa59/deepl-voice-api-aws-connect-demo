@@ -91,7 +91,7 @@ export async function startCustomerStreamTranscription(
   try {
     startStreamTranscriptionResponse = await amazonTranscribeClientCustomer.send(startStreamTranscriptionCommand);
   } catch (err) {
-    console.log(err);
+    console.error(err);
     return;
   }
   let lastProcessedIndex = 0;
@@ -105,6 +105,9 @@ export async function startCustomerStreamTranscription(
     const result = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
     if (result?.finalTranscript != null) {
       lastProcessedIndex = result.lastProcessedIndex;
+      if (!result.startTime) {
+        console.warn('missing startTime: ', { result })
+      }
       onFinalTranscribeEvent(result.finalTranscript, result.startTime, result.endTime);
     }
   }
@@ -153,6 +156,9 @@ export async function startAgentStreamTranscription(
     const result = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
     if (result?.finalTranscript != null) {
       lastProcessedIndex = result.lastProcessedIndex;
+      if (!result.startTime) {
+        console.warn('missing startTime: ', { result })
+      }
       onFinalTranscribeEvent(result.finalTranscript, result.startTime, result.endTime);
     }
   }
@@ -178,7 +184,12 @@ function getFinalTranscript(transcriptResults = [], lastProcessedIndex = 0, enab
   //Handle regular final transcript
   if (transcriptResults[0].IsPartial === false) {
     const finalTranscriptItems = transcriptResults[0].Alternatives[0].Items;
-    const startTime = finalTranscriptItems[0].StartTime;
+    const firstTimedItem = finalTranscriptItems.find(item => item.StartTime != null);
+    if (!firstTimedItem) {
+        console.warn('transcript results missing StartTime', { transcriptResults });
+        return null;
+    }
+    const startTime = firstTimedItem.StartTime;
     const endTime = finalTranscriptItems[finalTranscriptItems.length - 1].EndTime;
     if (finalTranscriptItems?.length > 0) {
       const finalTranscript = joinTranscriptItems(finalTranscriptItems, lastProcessedIndex);
@@ -203,7 +214,15 @@ function getFinalTranscript(transcriptResults = [], lastProcessedIndex = 0, enab
   if (allItemsAreStable === false) return null; // We were not able to find a punctuation
 
   const stableTranscript = joinTranscriptItems(segmentItems);
-  return { finalTranscript: stableTranscript, lastProcessedIndex: firstSegmentEndIndex + 1 };
+  const firstTimedItem   = segmentItems.find(item => item.StartTime != null);
+  const lastTimedItem    = [...segmentItems].reverse().find(item => item.EndTime != null);
+
+  return {
+      finalTranscript:    stableTranscript,
+      lastProcessedIndex: firstSegmentEndIndex + 1,
+      startTime:          firstTimedItem?.StartTime ?? null,
+      endTime:            lastTimedItem?.EndTime ?? null,
+  };
 }
 
 function joinTranscriptItems(transcriptItems = [], lastProcessedIndex = 0) {

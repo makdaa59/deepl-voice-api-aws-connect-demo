@@ -33,6 +33,11 @@ import {
   setRedirectURI,
   startTokenRefreshTimer
 } from "./utils/authUtility";
+import {
+  initLogStream,
+  resetLogStream
+} from "./utils/cwLoggerUtility";
+
 import { AudioStreamManager } from "./managers/AudioStreamManager";
 import { SessionTrackManager, TrackType } from "./managers/SessionTrackManager";
 import { createMicrophoneStream } from "./utils/transcribeUtils";
@@ -216,7 +221,6 @@ function showApp() {
 }
 
 const onLoad = async () => {
-  console.info(`${LOGGER_PREFIX} - index loaded`);
   bindUIElements();
   initEventListeners();
   CCP_V2V.UI.logoutButton.style.display = "block";
@@ -430,7 +434,7 @@ const initEventListeners = () => {
     const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
     if (event.target.checked) {
       if (ToCustomerAudioStreamManager != null) {
-        console.log(`${LOGGER_PREFIX} - agentStreamMicCheckbox change - Starting microphone with volume: ${micVolume}`);
+        console.info(`${LOGGER_PREFIX} - agentStreamMicCheckbox change - Starting microphone`,  { micVolume });
         ToCustomerAudioStreamManager.startMicrophone(micConstraints).then(() => {
           ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
         })
@@ -511,9 +515,9 @@ const initCCP = async (onConnectInitialized) => {
 
 const setLatencyTrackingUIVisibility = () => {
   const debugMode = isDebugMode();
-  console.log(`${LOGGER_PREFIX} - Latency tracking enabled: ${LATENCY_TRACKING_ENABLED}, Debug mode: ${debugMode}`);
+  console.info(`${LOGGER_PREFIX} - Latency tracking enabled`, { LATENCY_TRACKING_ENABLED, debugMode });
   if (!LATENCY_TRACKING_ENABLED || !debugMode) {
-    console.log(`${LOGGER_PREFIX} - Latency tracking is disabled or debug mode is off, hiding latency tracking UI panels`);
+    console.info(`${LOGGER_PREFIX} - Latency tracking is disabled or debug mode is off, hiding latency tracking UI panels`);
     CCP_V2V.UI.latencyTrackingPanels.forEach((panel) => {
       panel.style.display = "none";
     });
@@ -539,7 +543,7 @@ const onConnectInitialized = (connectAgent) => {
 function subscribeToAgentEvents() {
   // Subscribe to Agent Events from Streams API, and handle Agent events with functions defined above
   if (agentEventsBound) {
-    console.log(`${LOGGER_PREFIX} - already subscribed to events for agent`);
+    console.info(`${LOGGER_PREFIX} - already subscribed to events for agent`);
     return;
   }
   agentEventsBound = true;
@@ -557,19 +561,22 @@ function subscribeToAgentEvents() {
 function subscribeToContactEvents() {
   // Subscribe to Contact Events from Streams API, and handle Contact events
   if (contactEventsBound) {
-    console.log(`${LOGGER_PREFIX} - already subscribed to events for contact`);
+    console.info(`${LOGGER_PREFIX} - already subscribed to events for contact`);
     return;
   }
   contactEventsBound = true;
 
   console.info(`${LOGGER_PREFIX} - subscribing to events for contact`);
   connect.contact((contact) => {
-    console.info(`${LOGGER_PREFIX} - new contact`, contact);
-    if (contact.getActiveInitialConnection() && contact.getActiveInitialConnection().getEndpoint()) {
-      console.info(`${LOGGER_PREFIX} - new contact is from ${contact.getActiveInitialConnection().getEndpoint().phoneNumber}`);
-    } else {
-      console.info(`${LOGGER_PREFIX} - this is an existing contact for this agent`);
-    }
+    const contactId = contact.contactId;
+    initLogStream(contactId).then(() => {
+      if (contact.getActiveInitialConnection() && contact.getActiveInitialConnection().getEndpoint()) {
+        const phoneNumber = contact.getActiveInitialConnection().getEndpoint().phoneNumber;
+        console.info(`${LOGGER_PREFIX} - new contact`, { contactId, phoneNumber });
+      } else {
+        console.info(`${LOGGER_PREFIX} - this is an existing contact for this agent`, { contactId });
+      }
+    })
 
     contact.onConnecting(onContactConnecting);
     contact.onConnected(onContactConnected);
@@ -580,8 +587,7 @@ function subscribeToContactEvents() {
 }
 
 async function onContactConnecting(contact) {
-  console.info(`${LOGGER_PREFIX} - contact is connecting`, contact);
-
+  console.info(`${LOGGER_PREFIX} - contact is connecting:`, contact.contactId);
   if (customerLanguageSearchable) customerLanguageSearchable.disable();
   if (agentLanguageSearchable) agentLanguageSearchable.disable();
   CCP_V2V.UI.customerFormalitySelect.disabled = true;
@@ -595,7 +601,7 @@ async function onContactConnecting(contact) {
 }
 
 async function onContactConnected(contact) {
-  console.info(`${LOGGER_PREFIX} - contact connected`, contact);
+  console.info(`${LOGGER_PREFIX} - contact connected:`, contact.contactId);
   if (AWSEnabled) {
     await setAWSSelectedLanguages()
   }
@@ -611,7 +617,7 @@ async function onContactConnected(contact) {
 }
 
 function onContactEnded(contact) {
-  console.info(`${LOGGER_PREFIX} - contact has ended`, contact);
+  console.info(`${LOGGER_PREFIX} - contact has ended`, contact.contactId);
   CurrentAgentConnectionId = null;
   if (ToCustomerAudioStreamManager != null) {
     ToCustomerAudioStreamManager.dispose();
@@ -628,15 +634,16 @@ function onContactEnded(contact) {
   customerStopStreaming();
   agentStopStreaming();
   cleanUpUI();
+  resetLogStream();
 }
 
 async function onContactDestroyed(contact) {
-  console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact);
+  console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact.contactId);
   clearTranscriptCards();
 }
 
 async function onAgentLocalMediaStreamCreated(data) {
-  //console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
+  console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
   CurrentAgentConnectionId = data.connectionId;
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
   const peerConnection = session?._pc;
@@ -807,11 +814,13 @@ async function setAWSSelectedLanguages() {
     awsTranslateAgentLanguage = getAWSTranslateLanguageCode(selectedCustomerLanguage);
     awsPollyCustomerLanguage = getAWSPollyLanguageCode(selectedAgentLanguage);
     awsPollyAgentLanguage = getAWSPollyLanguageCode(selectedCustomerLanguage);
-    const pollyCustomerVoices = await describeVoices(awsPollyAgentLanguage, awsPollyEngines[0]);
+    const pollyCustomerVoices = await describeVoices(awsPollyAgentLanguage, awsPollyEngines[2]);
     awsPollyCustomerVoice = pollyCustomerVoices[0].Id;
-    const pollyAgentVoices = await describeVoices(awsPollyCustomerLanguage, awsPollyEngines[0]);
+    const pollyAgentVoices = await describeVoices(awsPollyCustomerLanguage, awsPollyEngines[2]);
     awsPollyAgentVoice = pollyAgentVoices[0].Id;
-    console.log('aws selected languages', {
+    const awsSelectedLanguages = {
+      selectedCustomerLanguage,
+      selectedAgentLanguage,
       awsTranscribeCustomerLanguage,
       awsTranscribeAgentLanguage,
       awsTranslateCustomerLanguage,
@@ -820,7 +829,8 @@ async function setAWSSelectedLanguages() {
       awsPollyAgentLanguage,
       awsPollyCustomerVoice,
       awsPollyAgentVoice
-    })
+    }
+    console.info('aws selected languages', awsSelectedLanguages);
 }
 //Creates Customer Speaker Stream used as input for Amazon Transcribe when transcribing customer's voice
 async function captureFromCustomerAudioStream() {
@@ -883,7 +893,7 @@ async function customerStartSession(audioLatencyTrackManager) {
       console.info(`${LOGGER_PREFIX} - 🎤 Customer session: Using DeepL Internal TTS`);
     }
 
-    console.info(`${LOGGER_PREFIX} - Customer session config:`, JSON.stringify(sessionConfig, null, 2));
+    console.info(`${LOGGER_PREFIX} - Customer session config:`, sessionConfig);
 
     await DeepLVoiceClientCustomer.startSession(sessionConfig);
   } catch (error) {
@@ -967,7 +977,7 @@ async function customerStartStreaming() {
 
     const DeepLVoiceFromCustomerAudioStream = await captureFromCustomerAudioStream();
     const sampleRate = AudioContextMgr.getActualSampleRate();
-    console.info(`${LOGGER_PREFIX} - customerStartStreaming - AmazonTranscribeFromCustomerAudioStream Sample Rate: ${sampleRate}`);
+    console.info(`${LOGGER_PREFIX} - customerStartStreaming - AmazonTranscribeFromCustomerAudioStream`, { sampleRate });
   
     DeepLVoiceClientCustomer.streamAudio(DeepLVoiceFromCustomerAudioStream, sampleRate);
 
@@ -1048,7 +1058,7 @@ async function agentStartStreaming() {
 
     DeepLVoiceToCustomerAudioStream = await createMicrophoneStream(micConstraints);
     const sampleRate = AudioContextMgr.getActualSampleRate();
-    console.info(`${LOGGER_PREFIX} - agentStartStreaming - AmazonTranscribeToCustomerAudioStream Sample Rate: ${sampleRate}`);
+    console.info(`${LOGGER_PREFIX} - agentStartStreaming - AmazonTranscribeToCustomerAudioStream`, { sampleRate });
 
     DeepLVoiceClientAgent.streamAudio(DeepLVoiceToCustomerAudioStream, sampleRate);
 
@@ -1145,7 +1155,7 @@ async function loadTranslateLanguageCodes() {
     raiseError(`Error listing DeepL languages: ${error}`);
     return [];
   });
-  console.log(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
+  console.info(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
 
   // Populate new simplified language selects
   deepLTranslateFromLanguages.forEach((language) => {
@@ -1384,6 +1394,9 @@ function getAWSPollyLanguageCode(selectedLanguageCode) {
     if (languageCode.includes(selectedLanguageCode)) {
       return languageCode;
     }
+  if (selectedLanguageCode == 'zh') {
+    return 'cmn-CN';
+  }
   }
 }
 
@@ -1408,7 +1421,7 @@ async function handleAWSAgentTranscript(inputText, startTime, endTime) {
 async function synthesizeCustomerVoice({ inputText, translatedText, startTime, endTime }) {
   if (isStringUndefinedNullEmpty(translatedText)) return;
 
-  const synthetizedSpeech = await synthesizeSpeech(awsPollyCustomerLanguage, awsPollyEngines[0], awsPollyCustomerVoice, translatedText).catch((error) => {
+  const synthetizedSpeech = await synthesizeSpeech(awsPollyCustomerLanguage, awsPollyEngines[2], awsPollyCustomerVoice, translatedText).catch((error) => {
     console.error(`${LOGGER_PREFIX} - synthesizeCustomerVoice - Error synthesizing speech:`, error);
     raiseError(`Error synthesizing speech: ${error}`);
     return null;
@@ -1429,7 +1442,7 @@ async function synthesizeCustomerVoice({ inputText, translatedText, startTime, e
 async function synthesizeAgentVoice({ inputText, translatedText, startTime, endTime }) {
   if (isStringUndefinedNullEmpty(translatedText)) return;
 
-  const synthetizedSpeech = await synthesizeSpeech(awsPollyAgentLanguage, awsPollyEngines[0], awsPollyAgentVoice, translatedText).catch((error) => {
+  const synthetizedSpeech = await synthesizeSpeech(awsPollyAgentLanguage, awsPollyEngines[2], awsPollyAgentVoice, translatedText).catch((error) => {
     console.error(`${LOGGER_PREFIX} - synthesizeAgentVoice - Error synthesizing speech:`, error);
     raiseError(`Error synthesizing speech: ${error}`);
     return null;
@@ -1637,7 +1650,7 @@ function getMicrophoneConstraints(deviceId) {
     },
   };
 
-  console.info(`${LOGGER_PREFIX} - getMicrophoneConstraints: ${JSON.stringify(microphoneConstraints)}`);
+  console.info(`${LOGGER_PREFIX} - getMicrophoneConstraints`, { microphoneConstraints });
   return microphoneConstraints;
 }
 
@@ -1695,7 +1708,7 @@ function disableMicrophoneAndSpeakerSelection() {
  * 3. Access via console: window.debugDashboard
  */
 if (isDebugMode()) {
-  console.log('🔧 Debug mode enabled - loading health dashboard...');
+  console.info('🔧 Debug mode enabled - loading health dashboard...');
 
   // Wait for DOM to be ready
   if (document.readyState === 'loading') {
@@ -1724,8 +1737,8 @@ function initDebugDashboard() {
     // Expose to window for console debugging
     window.debugDashboard = dashboard;
 
-    console.log('✅ Debug dashboard loaded successfully');
-    console.log('💡 Access via: window.debugDashboard');
+    console.info('✅ Debug dashboard loaded successfully');
+    console.info('💡 Access via: window.debugDashboard');
   }).catch(error => {
     console.error('❌ Failed to load debug dashboard:', error);
   });
@@ -1765,9 +1778,9 @@ function initEnvironmentSelector() {
     : 'https://api.deepl.com';
 
   environmentSelect.value = savedEnvironment;
-  console.log(`🌍 Environment initialized: ${savedEnvironment.toUpperCase()}`);
-  console.log(`   → API URL: ${initialApiUrl}`);
-  console.log(`   → API Key: DEEPL_${savedEnvironment.toUpperCase()}_API_KEY`);
+  console.info(`🌍 Environment initialized: ${savedEnvironment.toUpperCase()}`);
+  console.info(`   → API URL: ${initialApiUrl}`);
+  console.info(`   → API Key: DEEPL_${savedEnvironment.toUpperCase()}_API_KEY`);
 
   // Apply initial environment to clients if they exist
   updateClientsEnvironment(savedEnvironment);
@@ -1780,10 +1793,10 @@ function initEnvironmentSelector() {
       : 'https://api.deepl.com';
 
     localStorage.setItem('deepl_environment', newEnvironment);
-    console.log(`🔄 Environment switched to: ${newEnvironment.toUpperCase()}`);
-    console.log(`   → API URL: ${apiUrl}`);
-    console.log(`   → API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY`);
-    console.log(`   → Note: Active sessions continue with previous environment. New sessions will use ${newEnvironment.toUpperCase()}.`);
+    console.info(`🔄 Environment switched to: ${newEnvironment.toUpperCase()}`);
+    console.info(`   → API URL: ${apiUrl}`);
+    console.info(`   → API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY`);
+    console.info(`   → Note: Active sessions continue with previous environment. New sessions will use ${newEnvironment.toUpperCase()}.`);
 
     // Update all DeepL clients
     updateClientsEnvironment(newEnvironment);

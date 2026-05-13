@@ -58,7 +58,7 @@ class DeepLVoiceClient {
         // Only log significant state changes (not degraded/poor transitions)
         const significantStates = ['dead', 'reconnecting', 'offline'];
         if (significantStates.includes(newQuality) || significantStates.includes(oldQuality)) {
-          console.log(`${this.type} connection: ${oldQuality} → ${newQuality}`);
+          console.info(`${this.type} connection: ${oldQuality} → ${newQuality}`);
         }
       },
       onReconnectNeeded: () => {
@@ -106,7 +106,7 @@ class DeepLVoiceClient {
       throw new Error('Environment must be "dev" or "prod"');
     }
     this.environment = environment;
-    console.log(`${this.type} client environment set to: ${environment.toUpperCase()}`);
+    console.info(`${this.type} client environment set to: ${environment.toUpperCase()}`);
   }
 
   /**
@@ -164,8 +164,8 @@ class DeepLVoiceClient {
 
     // Log TTS provider selection
     const usingElevenLabs = body.early_access_experimental_mode === 'use_external_speech_provider';
-    console.log(`🚀 Requesting ${this.type} session [${this.environment.toUpperCase()}] with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
-    console.log('Session request body:', JSON.stringify(body, null, 2));
+    console.info(`🚀 Requesting ${this.type} session [${this.environment.toUpperCase()}] with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
+    console.info('Session request body:', body);
 
     try {
       const response = await fetch(this.requestSessionProxy, {
@@ -183,7 +183,7 @@ class DeepLVoiceClient {
       }
 
       const data = await response.json();
-      console.log('Session request successful, response data:', data);
+      console.info('Session request successful, response data:', data);
       this.streamingUrl = data.streaming_url;
       this.currentToken = data.token;
       
@@ -209,7 +209,7 @@ class DeepLVoiceClient {
 
       this.ws = new WebSocket(wsUrl);
       this.ws.onopen = () => {
-        console.log('✅ WebSocket connection established');
+        console.info('✅ WebSocket connection established');
         this.isConnected = true;
 
         // Start health monitoring
@@ -234,7 +234,7 @@ class DeepLVoiceClient {
       };
 
       this.ws.onclose = (event) => {
-        console.log('🔴 WebSocket closed:', event.reason);
+        console.info('🔴 WebSocket closed:', event.reason);
         this.isConnected = false;
 
         // Stop health monitoring
@@ -251,7 +251,7 @@ class DeepLVoiceClient {
     if (this.connecting) {
       return;
     }
-    console.log('Disconnecting...');
+    console.info('Disconnecting...');
     this.isConnected = false;
     this.shouldReconnect = false;
 
@@ -299,7 +299,7 @@ class DeepLVoiceClient {
 
     try {
       const message = JSON.parse(data);
-      console.log('Received message:', message);
+      console.debug('Received message:', message);
 
       if (message.source_transcript_update) {
         const update = message.source_transcript_update;
@@ -316,7 +316,7 @@ class DeepLVoiceClient {
                 const concludedText = update.concluded
                     .map(item => item.text)
                     .join('');
-                console.log(`[${this.type}] 📝 Transcription: "${concludedText}"`);
+                console.info(`[${this.type}] 📝 Transcription`, { language, concludedText, audioStartTime, audioEndTime });
                 this.onTranscription(concludedText);
                 this.audioLatencyTrackManager.onConcludedSourceTexts(
                   this.type, concludedText, audioStartTime, audioEndTime, language);
@@ -338,7 +338,7 @@ class DeepLVoiceClient {
                 const concludedText = update.concluded
                     .map(item => item.text)
                     .join('');
-                console.log(`[${this.type}] 🌐 Translation: "${concludedText}"`);
+                console.info(`[${this.type}] 🌐 Translation`, { language, audioStartTime, audioEndTime, concludedText });
                 this.onTranslation(concludedText);
                 this.audioLatencyTrackManager.onConcludedTargetTexts(
                   this.type, concludedText, audioStartTime, audioEndTime, language);
@@ -350,7 +350,7 @@ class DeepLVoiceClient {
         const data = update.data;
 
         if (data && data.length > 0) {
-          console.log(`[${this.type}] 🔊 Received audio: ${data.length} bytes`);
+          console.debug(`[${this.type}] 🔊 Received audio: ${data.length} bytes`);
           if (this.onAudio) {
               this.onAudio(data);
           }
@@ -361,16 +361,16 @@ class DeepLVoiceClient {
         }
       }
       else if (message.end_of_source_transcript) {
-        console.log('Source transcription ended');
+        console.info('Source transcription ended');
       } 
       else if (message.end_of_target_transcript) {
-        console.log('Target transcription ended');
+        console.info('Target transcription ended');
       }
       else if (message.end_of_target_media) {
-        console.log('Target media streaming ended');
+        console.info('Target media streaming ended');
       } 
       else if (message.end_of_stream) {
-        console.log('Stream ended');
+        console.info('Stream ended');
         if (this.onStreamEnd) {
           this.onStreamEnd();
         }
@@ -434,12 +434,12 @@ class DeepLVoiceClient {
         let lastLogTime = Date.now();
         const logInterval = 5000; // Log summary every 5 seconds
 
-        console.log(`[${this.type}] 🎬 streamAudio started - chunkSize: ${chunkSize} bytes (${(chunkSize / (targetSampleRate * 2) * 1000).toFixed(0)}ms @ ${targetSampleRate}Hz)`);
+        console.info(`[${this.type}] 🎬 streamAudio started - chunkSize: ${chunkSize} bytes (${(chunkSize / (targetSampleRate * 2) * 1000).toFixed(0)}ms @ ${targetSampleRate}Hz)`);
 
         for await (const audioEvent of getDeepLVoiceStream(audioStream, sampleRate)) {
             // Stop streaming if we've been disconnected (e.g., call ended)
             if (!this.shouldReconnect) {
-                console.log(`[${this.type}] 🛑 Stopping audio stream - call disconnected`);
+                console.info(`[${this.type}] 🛑 Stopping audio stream - call disconnected`);
                 break;
             }
 
@@ -462,7 +462,7 @@ class DeepLVoiceClient {
             // Periodic summary logging
             const now = Date.now();
             if (now - lastLogTime > logInterval) {
-                console.log(`[${this.type}] 📊 Streaming - Received: ${totalChunksReceived} chunks, Sent: ${totalChunksSent} chunks, Buffer: ${buffer.length} bytes`);
+                console.info(`[${this.type}] 📊 Streaming - Received: ${totalChunksReceived} chunks, Sent: ${totalChunksSent} chunks, Buffer: ${buffer.length} bytes`);
                 lastLogTime = now;
             }
         }
@@ -473,14 +473,14 @@ class DeepLVoiceClient {
             console.error(`[${this.type}] 🚨 Stream ended with ${buffer.length} bytes (${unsentMs}ms) UNSENT in buffer!`);
             console.warn(`[${this.type}] This audio was NEVER sent to the API and will be LOST`);
         } else {
-            console.log(`[${this.type}] ✅ Stream ended cleanly - buffer empty`);
+            console.info(`[${this.type}] ✅ Stream ended cleanly - buffer empty`);
         }
 
     } catch (error) {
         console.error(`[${this.type}] ❌ Error streaming audio:`, error);
         throw error;
     } finally {
-        console.log(`[${this.type}] 🏁 streamAudio ended`);
+        console.info(`[${this.type}] 🏁 streamAudio ended`);
     }
   }
 
@@ -491,7 +491,7 @@ class DeepLVoiceClient {
       const dropReason = this.isReconnecting ? 'RECONNECTING' : 'DISCONNECTED';
 
       // ⚠️ ALWAYS log drops (not just in debug mode) - this is critical data!
-      console.error(`[${this.type}] 🚫 DROPPING ${audioBuffer.length} bytes - Reason: ${dropReason}, isConnected=${this.isConnected}, ${wsState}`);
+      console.warn(`[${this.type}] 🚫 DROPPING ${audioBuffer.length} bytes - Reason: ${dropReason}, isConnected=${this.isConnected}, ${wsState}`);
       console.warn(`[${this.type}] ⚠️  This audio will NOT be transcribed/translated!`);
 
       // Track drop statistics
@@ -536,7 +536,7 @@ class DeepLVoiceClient {
     if (!this.isConnected || !this.ws) {
         return;
     }
-    console.log('Signaling end of audio stream');
+    console.info('Signaling end of audio stream');
     this.ws.send(JSON.stringify({
         end_of_source_media: {}
     }));
@@ -553,7 +553,7 @@ class DeepLVoiceClient {
       return;
     }
     this.connecting = true;
-    console.log('Starting session with config:', config);
+    console.info('Starting session with config', config);
     const session = await this.requestSession(config);
     if (session && session.streaming_url && session.token) {
       await this.connect(session.streaming_url, session.token);
@@ -579,7 +579,7 @@ class DeepLVoiceClient {
    */
   async _handleReconnection() {
     if (!this.shouldReconnect) {
-      console.log(`🔄 Auto-reconnection disabled for ${this.type}, skipping`);
+      console.debug(`🔄 Auto-reconnection disabled for ${this.type}, skipping`);
       return;
     }
 
@@ -601,7 +601,7 @@ class DeepLVoiceClient {
     // Calculate backoff
     const backoffMs = this.healthMonitor.getNextBackoff();
 
-    console.error(`🚨 [${this.type}] RECONNECTION STARTED - WebSocket set to NULL, audio will be DROPPED for ${backoffMs}ms!`);
+    console.warn(`🚨 [${this.type}] RECONNECTION STARTED - WebSocket set to NULL, audio will be DROPPED for ${backoffMs}ms!`);
     console.log(`🔄 ${this.type} reconnecting in ${backoffMs}ms...`);
 
     // Wait for backoff
@@ -609,10 +609,10 @@ class DeepLVoiceClient {
     await new Promise(resolve => setTimeout(resolve, backoffMs));
     const actualBackoffMs = Date.now() - backoffStartTime;
 
-    console.log(`⏱️  [${this.type}] Backoff complete after ${actualBackoffMs}ms (expected ${backoffMs}ms)`);
+    console.info(`⏱️  [${this.type}] Backoff complete after ${actualBackoffMs}ms (expected ${backoffMs}ms)`);
 
     try {
-      console.log(`🔄 Attempting reconnection for ${this.type}...`);
+      console.info(`🔄 Attempting reconnection for ${this.type}...`);
 
       // Reset latency tracking for new connection
       if (this.audioLatencyTrackManager) {
@@ -624,12 +624,12 @@ class DeepLVoiceClient {
 
       // Success!
       const totalReconnectionTimeMs = Date.now() - reconnectionStartTime;
-      console.log(`✅ ${this.type} reconnected successfully after ${totalReconnectionTimeMs}ms`);
+      console.info(`✅ ${this.type} reconnected successfully after ${totalReconnectionTimeMs}ms`);
       console.warn(`⚠️  [${this.type}] Audio was DROPPED for ${totalReconnectionTimeMs}ms during reconnection!`);
 
       // Log drop statistics
       const dropStats = this.getDroppedAudioStats();
-      console.log(`📊 [${this.type}] Total dropped audio: ${dropStats.totalDroppedSeconds}s (${dropStats.totalDroppedChunks} chunks)`);
+      console.info(`📊 [${this.type}] Total dropped audio: ${dropStats.totalDroppedSeconds}s (${dropStats.totalDroppedChunks} chunks)`);
 
       this.healthMonitor.reconnectionSucceeded();
       this.isReconnecting = false; // Clear guard flag
@@ -641,7 +641,7 @@ class DeepLVoiceClient {
       const keepTrying = this.healthMonitor.reconnectionFailed();
 
       if (keepTrying && this.shouldReconnect) {
-        console.log(`🔄 Retrying ${this.type} reconnection...`);
+        console.info(`🔄 Retrying ${this.type} reconnection...`);
         // Recursively try again (will use new backoff)
         // Note: isReconnecting stays true for retry
         this._handleReconnection();

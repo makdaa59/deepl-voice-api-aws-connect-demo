@@ -3,6 +3,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 
 export interface CognitoStackProps extends cdk.NestedStackProps {
@@ -17,6 +18,7 @@ export class CognitoStack extends cdk.NestedStack {
   public readonly userPool: cognito.IUserPool;
   public readonly userPoolClient: cognito.IUserPoolClient;
   public readonly userPoolDomain: cognito.CfnUserPoolDomain;
+  public readonly logGroupName: string;
 
   constructor(scope: Construct, id: string, props: CognitoStackProps) {
     super(scope, id, props);
@@ -138,6 +140,26 @@ export class CognitoStack extends cdk.NestedStack {
       })
     );
 
+    // Create the log group
+    const logGroup = new logs.LogGroup(this, "ConnectV2V", {
+      logGroupName: "/aws/connect/v2v-logs",
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Add CW Logs permissions to the authenticated role
+    authenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "logs:PutLogEvents",
+          "logs:CreateLogStream",
+          "logs:DescribeLogStreams",
+        ],
+        resources: [logGroup.logGroupArn + ":*"],
+      })
+    );
+
     const defaultPolicy = new cognito.CfnIdentityPoolRoleAttachment(this, "DefaultValid", {
       identityPoolId: identityPool.ref,
       roles: {
@@ -156,5 +178,6 @@ export class CognitoStack extends cdk.NestedStack {
     this.userPool = userPool;
     this.userPoolClient = userPoolClient;
     this.userPoolDomain = userPoolDomain;
+    this.logGroupName = logGroup.logGroupName;
   }
 }

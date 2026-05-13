@@ -143,7 +143,8 @@ export class AudioLatencyTrackManager {
             latencySec = receiveTime - sourceWallClockTime;
             latencyMs = latencySec * 1000;
         }
-        console.log('aws latency', {
+        console.info('aws latency', {
+            type,
             sourceLang,
             targetLang,
             sourceTexts,
@@ -190,7 +191,8 @@ export class AudioLatencyTrackManager {
                 const sourceStartTs = await this.frameTimers[type].getClosestBefore(sourceStartTime / 1000);
                 const latencySec = firstAudioTs - sourceStartTs
                 const latencyMs = latencySec * 1000;
-                console.log('latency', {
+                console.info('deepL latency', {
+                    type,
                     sourceLang,
                     targetLang,
                     sourceTexts,
@@ -566,6 +568,7 @@ export class AudioLatencyTrackManager {
     }
 
     updateLatencyDisplay(latencyData, elementId) {
+        console.info(`latency update - ${elementId}`, latencyData);
         const { latency, average, min, max, p95 } = latencyData;
         const element = document.getElementById(elementId);
         const valueSpan = element.querySelector(".latency-value");
