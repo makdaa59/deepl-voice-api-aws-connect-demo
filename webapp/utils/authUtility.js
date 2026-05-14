@@ -300,10 +300,10 @@ async function getCognitoIdentityCredentials(idToken) {
       accessKeyId: cognitoCredentialsForIdentity.Credentials.AccessKeyId,
       secretAccessKey: cognitoCredentialsForIdentity.Credentials.SecretKey,
       sessionToken: cognitoCredentialsForIdentity.Credentials.SessionToken,
-      expiration: cognitoCredentialsForIdentity.Credentials.Expiration,
+      expiration: new Date(cognitoCredentialsForIdentity.Credentials.Expiration).toISOString(),
     };
 
-    console.info(`${LOGGER_PREFIX} - getCognitoIdentityCredentials - Cognito Identity credentials obtained, expire at ${credentials.expiration.toISOString()}`);
+    console.info(`${LOGGER_PREFIX} - getCognitoIdentityCredentials - Cognito Identity credentials obtained, expire at ${credentials.expiration}`);
     setAwsCredentials(credentials);
     return credentials;
   } catch (error) {
@@ -349,9 +349,6 @@ export function hasValidAwsCredentials() {
   const bufferTime = 15 * 60 * 1000; // 15 minutes in milliseconds
   const currentTime = new Date();
   const expirationTime = new Date(awsCredentials.expiration);
-  // console.info(
-  //   `${LOGGER_PREFIX} - hasValidAwsCredentials - AWS Credentials expiration: ${expirationTime.toISOString()}`
-  // );
 
   return currentTime.getTime() + bufferTime < expirationTime.getTime();
 }

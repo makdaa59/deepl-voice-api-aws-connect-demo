@@ -46,6 +46,8 @@ export class CdkBackendStack extends cdk.Stack {
     this.backendStackOutputs.push({ key: "translateProxyEnabled", value: String(ssmParams.translateProxyEnabled) });
     this.backendStackOutputs.push({ key: "pollyRegion", value: ssmParams.pollyRegion });
     this.backendStackOutputs.push({ key: "pollyProxyEnabled", value: String(ssmParams.pollyProxyEnabled) });
+    this.backendStackOutputs.push({ key: "logGroupName", value: cognitoStack.logGroupName });
+    this.backendStackOutputs.push({ key: "logRegion", value: this.region });
 
     new cdk.CfnOutput(this, "userPoolId", {
       value: cognitoStack.userPool.userPoolId,

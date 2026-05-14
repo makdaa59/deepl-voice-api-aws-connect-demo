@@ -6,13 +6,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="lib/connect-rtc-1.1.26.min.js"></script>
     <script src="/frontend-config.js" type="text/javascript"></script>
-    <title>DeepL V2V</title>
+    <title>Connect + DeepL V2V</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="app">
+
+      <!-- ── Header ─────────────────────────────────────────────────────── -->
       <header>
-        <h1>DeepL V2V</h1>
+        <h1>
+          <span class="deepl-logo">
+            <img src="https://www.deepl.com/img/logo/deepl-logo-blue.svg" alt="DeepL" height="24" />
+          </span>
+          AWS Connect + DeepL V2V
+        </h1>
         <div id="environmentSelector" class="environment-selector hidden">
           <label for="environmentSelect">Environment:</label>
           <select id="environmentSelect">
@@ -23,16 +30,21 @@
         <button id="logoutButton" class="hidden">Logout</button>
       </header>
 
+      <!-- ── Main ───────────────────────────────────────────────────────── -->
       <main>
+
+        <!-- ── Left Column: CCP + Audio Controls ──────────────────────── -->
         <div id="leftColumn">
+
           <section id="ccpSection">
             <h2>Contact Control Panel</h2>
             <div id="ccpContainer"></div>
           </section>
+
           <section id="audioControls">
             <h2>Audio Controls</h2>
             <div class="control-group">
-              <h3>Select Speaker</h3>
+              <h3>Speaker</h3>
               <div class="input-group">
                 <label for="speakerSelect">Speaker:</label>
                 <select id="speakerSelect">
@@ -47,53 +59,29 @@
                 <select id="micSelect">
                   <option value="">-- Select Microphone --</option>
                 </select>
-                <button id="testMicButton">Test</button> <button id="micSaveButton">Save</button>
+                <button id="testMicButton">Test</button>
+                <button id="micSaveButton">Save</button>
               </div>
               <div id="volumeBarContainer" class="volume-bar-container" hidden>
                 <div id="volumeBar" class="volume-bar"></div>
               </div>
               <div class="checkbox-group">
-                <input
-                  type="checkbox"
-                  id="echoCancellationCheckbox"
-                  name="echoCancellationCheckbox"
-                  title="Browser's built-in echo cancellation. Disable when using high-quality headphones with hardware based echo cancellation."
-                  checked
-                />
-                <label
-                  for="echoCancellationCheckbox"
-                  title="Browser's built-in echo cancellation. Disable when using high-quality headphones with hardware based echo cancellation."
-                  >Echo Cancellation</label
-                >
+                <input type="checkbox" id="echoCancellationCheckbox" name="echoCancellationCheckbox"
+                  title="Browser's built-in echo cancellation." checked />
+                <label for="echoCancellationCheckbox">Echo Cancellation</label>
               </div>
               <div class="checkbox-group">
-                <input
-                  type="checkbox"
-                  id="noiseSuppressionCheckbox"
-                  name="noiseSuppressionCheckbox"
-                  title="Browser's built-in noise suppression. Disable when using high-quality headphones with hardware based noise suppression."
-                  checked
-                />
-                <label
-                  for="noiseSuppressionCheckbox"
-                  title="Browser's built-in noise suppression. Disable when using high-quality headphones with hardware based noise suppression."
-                  >Noise Suppression</label
-                >
+                <input type="checkbox" id="noiseSuppressionCheckbox" name="noiseSuppressionCheckbox"
+                  title="Browser's built-in noise suppression." checked />
+                <label for="noiseSuppressionCheckbox">Noise Suppression</label>
               </div>
               <div class="checkbox-group">
-                <input
-                  type="checkbox"
-                  id="autoGainControlCheckbox"
-                  name="autoGainControlCheckbox"
-                  title="Browser's built-in auto gain control for microphone input. Automatically adjusts microphone volume, disable to prevent picking up nearby voices."
-                />
-                <label
-                  for="autoGainControlCheckbox"
-                  title="Browser's built-in auto gain control for microphone input. Automatically adjusts microphone volume, disable to prevent picking up nearby voices."
-                  >Auto Gain Control</label
-                >
+                <input type="checkbox" id="autoGainControlCheckbox" name="autoGainControlCheckbox"
+                  title="Browser's built-in auto gain control." />
+                <label for="autoGainControlCheckbox">Auto Gain Control</label>
               </div>
             </div>
+
             <div class="control-group" hidden>
               <h3>Swap Audio Source</h3>
               <button id="btnStreamFile">Stream File</button>
@@ -101,6 +89,7 @@
               <button id="btnRemoveAudioStream">Remove Stream</button>
             </div>
           </section>
+
           <section id="audioPlayback" hidden>
             <h2>Audio Playback</h2>
             <div class="audio-group">
@@ -116,255 +105,326 @@
               <audio id="toAgentAudioElement" controls autoplay></audio>
             </div>
           </section>
-        </div>
+
+        </div><!-- /#leftColumn -->
+
+        <!-- ── Right Column: Controls + Conversation ──────────────────── -->
         <div id="rightColumn">
           <section id="transcribeTranslate">
-            <div id="divCustomerControls" class="participant-controls">
-              <h2>Customer Controls</h2>
-              <div class="control-group-transcribe">
-                <h3>Audio</h3>
-                <div class="volume-group">
-                  <label for="customerStreamMicVolume">Source Audio Volume:</label>
-                  <input type="range" id="customerStreamMicVolume" min="0" max="1" step="0.05" value="0" />
-                </div>
-                <div class="checkbox-group" style="display: none;">
-                  <input type="checkbox" id="customerStreamMicCheckbox" name="customerStreamMicCheckbox" unchecked />
-                  <label for="customerStreamMicCheckbox">Stream Customer Mic to Agent</label>
-                </div>
-                <div class="checkbox-group">
-                  <input type="checkbox" id="customerStreamTranslationCheckbox" name="customerStreamTranslationCheckbox" unchecked />
-                  <label for="customerStreamTranslationCheckbox">Stream Customer Translation to Customer</label>
-                </div>
-                <div class="checkbox-group" style="display: none;">
-                  <input type="checkbox" id="customerAudioFeedbackEnabledCheckbox" name="customerAudioFeedbackEnabledCheckbox" unchecked />
-                  <label for="customerAudioFeedbackEnabledCheckbox">Enable Customer Audio Feedback</label>
-                </div>
-                <div class="vad-container">
-                  <div id="customerVadIndicator" class="vad-indicator"></div>
-                  <span><h4>Customer Voice Detected</h4></span>
-                </div>
-              </div>
-              <div class="control-group-translate">
-                <h3>Languages</h3>
-                <div class="input-group">
-                  <label for="customerLanguageSelect">Customer speaks:</label>
-                  <select id="customerLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerLanguageSaveButton" style="display: none;">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="customerFormalitySelect">Customer Translation Formality:</label>
-                  <select id="customerFormalitySelect">
-                    <option value="">-- Select Translation Formality --</option>
-                  </select>
-                </div>
-                <div class="input-group" style="display: none;">
-                  <label for="customerTranslateFromLanguageSelect">Select Source Language:</label>
-                  <select id="customerTranslateFromLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranslateFromLanguageSaveButton">Save</button>
-                </div>
-                <div class="input-group" style="display: none;">
-                  <label for="customerTranslateToLanguageSelect">Select Target Language:</label>
-                  <select id="customerTranslateToLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranslateToLanguageSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="customerTtsProviderSelect">Customer TTS Provider:</label>
-                  <select id="customerTtsProviderSelect">
-                    <option value="deepl">DeepL</option>
-                    <option value="elevenlabs">ElevenLabs</option>
-                  </select>
-                </div>
-                <div class="input-group">
-                  <label for="customerVoiceIdSelect">Customer Preferred Voice:</label>
-                  <select id="customerVoiceIdSelect">
-                    <option value="">-- Select Voice --</option>
-                  </select>
-                  <button id="customerVoiceIdSaveButton" hidden>Save</button>
-                </div>
-                <div class="output-group">
-                  <label for="customerTranscriptionTextOutputDiv">Customer Transcription:</label>
-                  <div id="customerTranscriptionTextOutputDiv" class="output-text"></div>
-                </div>
-                <div class="output-group">
-                  <label for="customerTranslatedTextOutputDiv">Customer Translation:</label>
-                  <div id="customerTranslatedTextOutputDiv" class="output-text"></div>
-                </div>
-              </div>
-              <div class="control-group-latency">
-                <h3>Latency</h3>
-                  <div id="customer-latency-transcription" style="margin-top: 8px;">
-                    &Delta; Source Audio => Source Text
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-translation" style="margin-top: 8px;">
-                    &Delta; Source Audio => Translation Text
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-tts" style="margin-top: 8px;">
-                    &Delta; Translation Text => Synthesized Voice
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-customerVoiceToSynthesis" style="margin-top: 8px;">
-                    &Delta; First Customer Source Audio => First Customer Synthesis
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-agentVoiceToCustomerSynthesis" style="margin-top: 8px;">
-                    &Delta; Last Agent Source Audio => First Customer Synthesis
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-agentSynthesisToCustomerSynthesis" style="margin-top: 8px;">
-                   &Delta;  Last Agent Synthesis => First Customer Synthesis
-                   <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="customer-latency-agentSynthesisToCustomerVoice" style="margin-top: 8px;">
-                    &Delta; Last Agent Synthesis => First Customer Source Audio
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-              </div>
-            </div>
 
-            <div id="divAgentControls" class="participant-controls">
-              <h2>Agent Controls</h2>
-              <div class="control-group-transcribe">
-                <h3>Audio</h3>
-                <div class="volume-group">
-                  <label for="agentStreamMicVolume">Source Audio Volume:</label>
-                  <input type="range" id="agentStreamMicVolume" min="0" max="1" step="0.05" value="0" />
-                </div>
-                <div class="checkbox-group" style="display: none;">
-                  <input type="checkbox" id="agentStreamMicCheckbox" name="agentStreamMicCheckbox" unchecked />
-                  <label for="agentStreamMicCheckbox">Stream Agent Mic to Customer</label>
-                </div>
-                <div class="checkbox-group">
-                  <input type="checkbox" id="agentStreamTranslationCheckbox" name="StreamTranslationCheckbox" unchecked />
-                  <label for="agentStreamTranslationCheckbox">Stream Agent Translation to Agent</label>
-                </div>
-                <div class="checkbox-group" style="display: none;">
-                  <input type="checkbox" id="agentAudioFeedbackEnabledCheckbox" name="agentAudioFeedbackEnabledCheckbox" unchecked />
-                  <label for="agentAudioFeedbackEnabledCheckbox">Enable Agent Audio Feedback</label>
-                </div>
-                <div class="button-group">
-                  <button id="agentMuteTranscriptionButton">Mute</button>
-                </div>
-              </div>
-              <div class="control-group-translate">
-                <h3>Languages</h3>
-                <div class="input-group">
-                  <label for="agentLanguageSelect">Agent speaks:</label>
-                  <select id="agentLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="agentLanguageSaveButton" style="display: none;">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="agentFormalitySelect">Agent Translation Formality:</label>
-                  <select id="agentFormalitySelect">
-                    <option value="">-- Select Translation Formality --</option>
-                  </select>
-                </div>
-                <div class="input-group" style="display: none;">
-                  <label for="agentTranslateFromLanguageSelect">Select Source Language:</label>
-                  <select id="agentTranslateFromLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="agentTranslateFromLanguageSaveButton">Save</button>
-                </div>
-                <div class="input-group" style="display: none;">
-                  <label for="agentTranslateToLanguageSelect">Select Target Language:</label>
-                  <select id="agentTranslateToLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="agentTranslateToLanguageSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="agentTtsProviderSelect">Agent TTS Provider:</label>
-                  <select id="agentTtsProviderSelect">
-                    <option value="deepl">DeepL</option>
-                    <option value="elevenlabs">ElevenLabs</option>
-                  </select>
-                </div>
-                <div class="input-group">
-                  <label for="agentVoiceIdSelect">Agent Preferred Voice:</label>
-                  <select id="agentVoiceIdSelect">
-                    <option value="">-- Select Voice --</option>
-                  </select>
-                  <button id="agentVoiceIdSaveButton" hidden>Save</button>
-                </div>
-                <div class="output-group">
-                  <label for="agentTranscriptionTextOutputDiv">Agent Transcription:</label>
-                  <div id="agentTranscriptionTextOutputDiv" class="output-text"></div>
-                </div>
-                <div class="output-group">
-                  <label for="agentTranslatedTextOutputDiv">Agent Translation:</label>
-                  <div id="agentTranslatedTextOutputDiv" class="output-text"></div>
-                </div>
-              </div>
-              <div class="control-group-latency">
-                <h3>Latency</h3>
-                  <div id="agent-latency-transcription" style="margin-top: 8px;">
-                    &Delta; Source Audio => Source Text
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-translation" style="margin-top: 8px;">
-                    &Delta; Source Audio => Translation Text
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-tts" style="margin-top: 8px;">
-                    &Delta; Translation Text => Synthesized Voice
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-agentVoiceToSynthesis" style="margin-top: 8px;">
-                    &Delta; First Agent Source Audio => First Agent Synthesis
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-customerVoiceToAgentSynthesis" style="margin-top: 8px;">
-                    &Delta; Last Customer Source Audio => First Agent Synthesis
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-customerSynthesisToAgentSynthesis" style="margin-top: 8px;">
-                    &Delta; Last Customer Synthesis => First Agent Synthesis
-                    <div class="latency-value">-- ms</div>
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-                  <div id="agent-latency-customerSynthesisToAgentVoice" style="margin-top: 8px;">
-                    &Delta; Last Customer Synthesis => First Agent Source Audio
-                    <div class="latency-value">-- ms</div>                    
-                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
-                  </div>
-              </div>
-            </div>
+            <!-- Customer + Agent controls side by side -->
+            <div id="controls-column">
 
-            <div id="divTranscription" class="participant-controls">
+              <!-- ── Customer Controls ─────────────────────────────────── -->
+              <div id="customer-controls" class="participant-controls">
+                <h2>Customer</h2>
+
+                <div class="control-group-transcribe">
+                  <h3>Audio</h3>
+                  <div class="volume-group">
+                    <label for="customerStreamMicVolume">Source Volume:</label>
+                    <input type="range" id="customerStreamMicVolume" min="0" max="1" step="0.05" value="0" />
+                  </div>
+                  <div class="checkbox-group" style="display:none;">
+                    <input type="checkbox" id="customerStreamMicCheckbox" name="customerStreamMicCheckbox" />
+                    <label for="customerStreamMicCheckbox">Stream Mic to Agent</label>
+                  </div>
+                  <div class="checkbox-group">
+                    <input type="checkbox" id="customerStreamTranslationCheckbox" name="customerStreamTranslationCheckbox" />
+                    <label for="customerStreamTranslationCheckbox">Stream Translation to Customer</label>
+                  </div>
+                  <div class="checkbox-group" style="display:none;">
+                    <input type="checkbox" id="customerAudioFeedbackEnabledCheckbox" name="customerAudioFeedbackEnabledCheckbox" />
+                    <label for="customerAudioFeedbackEnabledCheckbox">Enable Audio Feedback</label>
+                  </div>
+                  <div class="vad-container">
+                    <div id="customerVadIndicator" class="vad-indicator"></div>
+                    <h4>Voice Detected</h4>
+                  </div>
+                </div>
+
+                <div class="control-group-translate">
+                  <h3>Languages</h3>
+                  <div class="input-group">
+                    <label for="customerLanguageSelect">Customer speaks:</label>
+                    <select id="customerLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="customerLanguageSaveButton" style="display:none;">Save</button>
+                  </div>
+                  <div class="input-group">
+                    <label for="customerFormalitySelect">Formality:</label>
+                    <select id="customerFormalitySelect">
+                      <option value="">-- Select Formality --</option>
+                    </select>
+                  </div>
+                  <div class="input-group" style="display:none;">
+                    <label for="customerTranslateFromLanguageSelect">Source Language:</label>
+                    <select id="customerTranslateFromLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="customerTranslateFromLanguageSaveButton">Save</button>
+                  </div>
+                  <div class="input-group" style="display:none;">
+                    <label for="customerTranslateToLanguageSelect">Target Language:</label>
+                    <select id="customerTranslateToLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="customerTranslateToLanguageSaveButton">Save</button>
+                  </div>
+                  <div class="input-group">
+                    <label for="customerTtsProviderSelect">TTS Provider:</label>
+                    <select id="customerTtsProviderSelect">
+                      <option value="deepl">DeepL</option>
+                      <option value="elevenlabs">ElevenLabs</option>
+                    </select>
+                  </div>
+                  <div class="input-group">
+                    <label for="customerVoiceIdSelect">Preferred Voice:</label>
+                    <select id="customerVoiceIdSelect">
+                      <option value="">-- Select Voice --</option>
+                    </select>
+                    <button id="customerVoiceIdSaveButton" hidden>Save</button>
+                  </div>
+                  <div class="output-group">
+                    <label>Transcription:</label>
+                    <div id="customerTranscriptionTextOutputDiv" class="output-text"></div>
+                  </div>
+                  <div class="output-group">
+                    <label>Translation:</label>
+                    <div id="customerTranslatedTextOutputDiv" class="output-text"></div>
+                  </div>
+                </div>
+
+                <div class="control-group-latency">
+                  <h3>Latency</h3>
+                  <div id="customer-latency-transcription" style="margin-top:8px;">
+                    &Delta; Source Audio &rarr; Source Text
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-translation" style="margin-top:8px;">
+                    &Delta; Source Audio &rarr; Translation Text
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-tts" style="margin-top:8px;">
+                    &Delta; Translation Text &rarr; Synthesized Voice
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-customerVoiceToSynthesis" style="margin-top:8px;">
+                    &Delta; First Customer Audio &rarr; First Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-customerAWSVoiceToSynthesis" style="margin-top:8px;" hidden>
+                    &Delta; <img src="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg" height="12" style="vertical-align:middle; margin: 0 3px;" /> First Customer Audio &rarr; First Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-agentVoiceToCustomerSynthesis" style="margin-top:8px;">
+                    &Delta; Last Agent Audio &rarr; First Customer Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-agentSynthesisToCustomerSynthesis" style="margin-top:8px;">
+                    &Delta; Last Agent Synthesis &rarr; First Customer Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-agentSynthesisToCustomerVoice" style="margin-top:8px;">
+                    &Delta; Last Agent Synthesis &rarr; First Customer Audio
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                </div>
+              </div><!-- /#customer-controls -->
+
+              <!-- ── Agent Controls ────────────────────────────────────── -->
+              <div id="agent-controls" class="participant-controls">
+                <h2>Agent</h2>
+
+                <div class="control-group-transcribe">
+                  <h3>Audio</h3>
+                  <div class="volume-group">
+                    <label for="agentStreamMicVolume">Source Volume:</label>
+                    <input type="range" id="agentStreamMicVolume" min="0" max="1" step="0.05" value="0" />
+                  </div>
+                  <div class="checkbox-group" style="display:none;">
+                    <input type="checkbox" id="agentStreamMicCheckbox" name="agentStreamMicCheckbox" />
+                    <label for="agentStreamMicCheckbox">Stream Mic to Customer</label>
+                  </div>
+                  <div class="checkbox-group">
+                    <input type="checkbox" id="agentStreamTranslationCheckbox" name="StreamTranslationCheckbox" />
+                    <label for="agentStreamTranslationCheckbox">Stream Translation to Agent</label>
+                  </div>
+                  <div class="checkbox-group" style="display:none;">
+                    <input type="checkbox" id="agentAudioFeedbackEnabledCheckbox" name="agentAudioFeedbackEnabledCheckbox" />
+                    <label for="agentAudioFeedbackEnabledCheckbox">Enable Audio Feedback</label>
+                  </div>
+                  <div class="button-group">
+                    <button id="agentMuteTranscriptionButton">Mute</button>
+                  </div>
+                  <!-- Agent VAD: hidden but kept in DOM for JS -->
+                  <div class="vad-container" style="display:none;">
+                    <div id="agentVadIndicator" class="vad-indicator"></div>
+                    <h4>Voice Detected</h4>
+                  </div>
+                </div>
+
+                <div class="control-group-translate">
+                  <h3>Languages</h3>
+                  <div class="input-group">
+                    <label for="agentLanguageSelect">Agent speaks:</label>
+                    <select id="agentLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="agentLanguageSaveButton" style="display:none;">Save</button>
+                  </div>
+                  <div class="input-group">
+                    <label for="agentFormalitySelect">Formality:</label>
+                    <select id="agentFormalitySelect">
+                      <option value="">-- Select Formality --</option>
+                    </select>
+                  </div>
+                  <div class="input-group" style="display:none;">
+                    <label for="agentTranslateFromLanguageSelect">Source Language:</label>
+                    <select id="agentTranslateFromLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="agentTranslateFromLanguageSaveButton">Save</button>
+                  </div>
+                  <div class="input-group" style="display:none;">
+                    <label for="agentTranslateToLanguageSelect">Target Language:</label>
+                    <select id="agentTranslateToLanguageSelect">
+                      <option value="">-- Select Language --</option>
+                    </select>
+                    <button id="agentTranslateToLanguageSaveButton">Save</button>
+                  </div>
+                  <div class="input-group" style="display:none;">
+                    <label for="agentTranslateTextInput">Translate Text:</label>
+                    <input type="text" id="agentTranslateTextInput" />
+                    <button id="agentTranslateTextButton">Translate</button>
+                  </div>
+                  <div class="input-group">
+                    <label for="agentTtsProviderSelect">TTS Provider:</label>
+                    <select id="agentTtsProviderSelect">
+                      <option value="deepl">DeepL</option>
+                      <option value="elevenlabs">ElevenLabs</option>
+                    </select>
+                  </div>
+                  <div class="input-group">
+                    <label for="agentVoiceIdSelect">Preferred Voice:</label>
+                    <select id="agentVoiceIdSelect">
+                      <option value="">-- Select Voice --</option>
+                    </select>
+                    <button id="agentVoiceIdSaveButton" hidden>Save</button>
+                  </div>
+                  <div class="output-group">
+                    <label>Transcription:</label>
+                    <div id="agentTranscriptionTextOutputDiv" class="output-text"></div>
+                  </div>
+                  <div class="output-group">
+                    <label>Translation:</label>
+                    <div id="agentTranslatedTextOutputDiv" class="output-text"></div>
+                  </div>
+                </div>
+
+                <div class="control-group-latency">
+                  <h3>Latency</h3>
+                  <div id="agent-latency-transcription" style="margin-top:8px;">
+                    &Delta; Source Audio &rarr; Source Text
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-translation" style="margin-top:8px;">
+                    &Delta; Source Audio &rarr; Translation Text
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-tts" style="margin-top:8px;">
+                    &Delta; Translation Text &rarr; Synthesized Voice
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-agentVoiceToSynthesis" style="margin-top:8px;">
+                    &Delta; First Agent Audio &rarr; First Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-agentAWSVoiceToSynthesis" style="margin-top:8px;" hidden>
+                    &Delta; <img src="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg" height="12" style="vertical-align:middle; margin: 0 3px;" /> First Agent Audio &rarr; First Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-customerVoiceToAgentSynthesis" style="margin-top:8px;">
+                    &Delta; Last Customer Audio &rarr; First Agent Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-customerSynthesisToAgentSynthesis" style="margin-top:8px;">
+                    &Delta; Last Customer Synthesis &rarr; First Agent Synthesis
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-customerSynthesisToAgentVoice" style="margin-top:8px;">
+                    &Delta; Last Customer Synthesis &rarr; First Agent Audio
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                </div>
+
+                <!-- Hidden elements kept for JS compatibility -->
+                <select id="agentPollyLanguageCodeSelect" hidden></select>
+                <button id="agentPollyLanguageCodeSaveButton" hidden></button>
+                <select id="agentPollyEngineSelect" hidden></select>
+                <button id="agentPollyEngineSaveButton" hidden></button>
+                <select id="agentPollyVoiceIdSelect" hidden></select>
+                <button id="agentPollyVoiceIdSaveButton" hidden></button>
+                <input type="text" id="agentPollyTextInput" hidden />
+                <button id="agentSynthesizeSpeechButton" hidden></button>
+                <select id="customerPollyLanguageCodeSelect" hidden></select>
+                <button id="customerPollyLanguageCodeSaveButton" hidden></button>
+                <select id="customerPollyEngineSelect" hidden></select>
+                <button id="customerPollyEngineSaveButton" hidden></button>
+                <select id="customerPollyVoiceIdSelect" hidden></select>
+                <button id="customerPollyVoiceIdSaveButton" hidden></button>
+                <select id="customerTranscribeLanguageSelect" hidden></select>
+                <button id="customerTranscribeLanguageSaveButton" hidden></button>
+                <select id="customerTranscribePartialResultsStabilitySelect" hidden></select>
+                <button id="customerTranscribePartialResultsStabilitySaveButton" hidden></button>
+                <button id="customerStartTranscriptionButton" hidden></button>
+                <button id="customerStopTranscriptionButton" hidden></button>
+                <select id="agentTranscribeLanguageSelect" hidden></select>
+                <button id="agentTranscribeLanguageSaveButton" hidden></button>
+                <select id="agentTranscribePartialResultsStabilitySelect" hidden></select>
+                <button id="agentTranscribePartialResultsStabilitySaveButton" hidden></button>
+                <button id="agentStartTranscriptionButton" hidden></button>
+                <button id="agentStopTranscriptionButton" hidden></button>
+                <select id="micSelect" hidden></select>
+                <button id="testMicButton" hidden></button>
+                <button id="micSaveButton" hidden></button>
+
+              </div><!-- /#agent-controls -->
+
+            </div><!-- /#controls-column -->
+
+            <!-- Conversation Panel -->
+            <div id="divTranscription">
               <h2>Conversation</h2>
               <div class="control-group-transcription">
                 <div id="divTranscriptContainer" class="transcript-container">
                   <div class="transcript-spacer"></div>
-                  <!-- Transcript messages will be added here dynamically -->
                 </div>
               </div>
             </div>
-          </section>
-        </div>
+
+          </section><!-- /#transcribeTranslate -->
+        </div><!-- /#rightColumn -->
+
       </main>
-    </div>
+    </div><!-- /#app -->
     <script type="module" src="/main.js"></script>
   </body>
 </html>

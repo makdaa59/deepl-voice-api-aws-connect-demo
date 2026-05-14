@@ -5,7 +5,7 @@ import { TRANSCRIBE_CONFIG } from "../config";
 import { LOGGER_PREFIX, TRANSCRIBE_PARTIAL_RESULTS_STABILITY } from "../constants";
 import { getValidAwsCredentials, hasValidAwsCredentials } from "../utils/authUtility";
 import { isFunction, isObjectUndefinedNullEmpty, isStringUndefinedNullEmpty } from "../utils/commonUtility";
-import { getTranscribeAudioStream, getTranscribeMicStream } from "../utils/transcribeUtils";
+import { getAWSCustomerStream, getAWSAgentStream } from "../utils/transcribeUtils";
 
 let _amazonTranscribeClientAgent;
 let _amazonTranscribeClientCustomer;
@@ -64,29 +64,36 @@ export async function startCustomerStreamTranscription(
   languageCode,
   partialResultStability,
   onFinalTranscribeEvent,
-  onPartialTranscribeEvent
+  onPartialTranscribeEvent,
+  audioLatencyTrackManager,
 ) {
   if (isObjectUndefinedNullEmpty(audioStream)) throw new Error("audioStream is required");
   if (!Number.isInteger(sampleRate)) throw new Error("sampleRate is required as integer");
   if (isStringUndefinedNullEmpty(languageCode)) throw new Error("languageCode is required");
   if (isStringUndefinedNullEmpty(partialResultStability)) throw new Error("partialResultStability is required");
-  if (isFunction(onFinalTranscribeEvent)) throw new Error("onFinalTranscribeEvent is required");
-  if (isFunction(onPartialTranscribeEvent)) throw new Error("onPartialTranscribeEvent is required");
+  // if (!isFunction(onFinalTranscribeEvent)) throw new Error("onFinalTranscribeEvent is required");
+  if (!isFunction(onPartialTranscribeEvent)) throw new Error("onPartialTranscribeEvent is required");
 
   const enablePartialResultsStabilization = TRANSCRIBE_PARTIAL_RESULTS_STABILITY.includes(partialResultStability);
-
+  
   const startStreamTranscriptionCommand = new StartStreamTranscriptionCommand({
     LanguageCode: languageCode,
     MediaEncoding: "pcm",
     MediaSampleRateHertz: sampleRate,
-    AudioStream: getTranscribeAudioStream(audioStream, sampleRate),
+    AudioStream: getAWSCustomerStream(audioStream, sampleRate, (startTime) => {
+      audioLatencyTrackManager.awsSessionStartTimes['customer'] = startTime;
+    }),
     EnablePartialResultsStabilization: enablePartialResultsStabilization,
     PartialResultsStability: enablePartialResultsStabilization ? partialResultStability : undefined,
   });
-
   const amazonTranscribeClientCustomer = await getAmazonTranscribeClientCustomer();
-  const startStreamTranscriptionResponse = await amazonTranscribeClientCustomer.send(startStreamTranscriptionCommand);
-
+  let startStreamTranscriptionResponse;
+  try {
+    startStreamTranscriptionResponse = await amazonTranscribeClientCustomer.send(startStreamTranscriptionCommand);
+  } catch (err) {
+    console.error(err);
+    return;
+  }
   let lastProcessedIndex = 0;
 
   for await (const event of startStreamTranscriptionResponse.TranscriptResultStream) {
@@ -95,10 +102,13 @@ export async function startCustomerStreamTranscription(
     const getPartialTranscriptResult = getPartialTranscript(transcriptResults, lastProcessedIndex);
     if (getPartialTranscriptResult != null) onPartialTranscribeEvent(getPartialTranscriptResult.partialTranscript);
 
-    const getFinalTranscriptResult = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
-    if (getFinalTranscriptResult != null) {
-      lastProcessedIndex = getFinalTranscriptResult.lastProcessedIndex;
-      onFinalTranscribeEvent(getFinalTranscriptResult.finalTranscript);
+    const result = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
+    if (result?.finalTranscript != null) {
+      lastProcessedIndex = result.lastProcessedIndex;
+      if (!result.startTime) {
+        console.warn('missing startTime: ', { result })
+      }
+      onFinalTranscribeEvent(result.finalTranscript, result.startTime, result.endTime);
     }
   }
 }
@@ -109,14 +119,15 @@ export async function startAgentStreamTranscription(
   languageCode,
   partialResultStability,
   onFinalTranscribeEvent,
-  onPartialTranscribeEvent
+  onPartialTranscribeEvent,
+  audioLatencyTrackManager,
 ) {
   if (isObjectUndefinedNullEmpty(audioStream)) throw new Error("audioStream is required");
   if (!Number.isInteger(sampleRate)) throw new Error("sampleRate is required as integer");
   if (isStringUndefinedNullEmpty(languageCode)) throw new Error("languageCode is required");
   if (isStringUndefinedNullEmpty(partialResultStability)) throw new Error("partialResultStability is required");
-  if (isFunction(onFinalTranscribeEvent)) throw new Error("onFinalTranscribeEvent is required");
-  if (isFunction(onPartialTranscribeEvent)) throw new Error("onPartialTranscribeEvent is required");
+  // if (!isFunction(onFinalTranscribeEvent)) throw new Error("onFinalTranscribeEvent is required");
+  if (!isFunction(onPartialTranscribeEvent)) throw new Error("onPartialTranscribeEvent is required");
 
   const enablePartialResultsStabilization = TRANSCRIBE_PARTIAL_RESULTS_STABILITY.includes(partialResultStability);
 
@@ -124,7 +135,9 @@ export async function startAgentStreamTranscription(
     LanguageCode: languageCode,
     MediaEncoding: "pcm",
     MediaSampleRateHertz: sampleRate,
-    AudioStream: getTranscribeMicStream(audioStream, sampleRate),
+    AudioStream: getAWSAgentStream(audioStream, sampleRate, (startTime) => {
+      audioLatencyTrackManager.awsSessionStartTimes['agent'] = startTime;
+    }),
     EnablePartialResultsStabilization: enablePartialResultsStabilization,
     PartialResultsStability: enablePartialResultsStabilization ? partialResultStability : undefined,
   });
@@ -140,10 +153,13 @@ export async function startAgentStreamTranscription(
     const getPartialTranscriptResult = getPartialTranscript(transcriptResults, lastProcessedIndex);
     if (getPartialTranscriptResult != null) onPartialTranscribeEvent(getPartialTranscriptResult.partialTranscript);
 
-    const getFinalTranscriptResult = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
-    if (getFinalTranscriptResult != null) {
-      lastProcessedIndex = getFinalTranscriptResult.lastProcessedIndex;
-      onFinalTranscribeEvent(getFinalTranscriptResult.finalTranscript);
+    const result = getFinalTranscript(transcriptResults, lastProcessedIndex, enablePartialResultsStabilization);
+    if (result?.finalTranscript != null) {
+      lastProcessedIndex = result.lastProcessedIndex;
+      if (!result.startTime) {
+        console.warn('missing startTime: ', { result })
+      }
+      onFinalTranscribeEvent(result.finalTranscript, result.startTime, result.endTime);
     }
   }
 }
@@ -168,9 +184,16 @@ function getFinalTranscript(transcriptResults = [], lastProcessedIndex = 0, enab
   //Handle regular final transcript
   if (transcriptResults[0].IsPartial === false) {
     const finalTranscriptItems = transcriptResults[0].Alternatives[0].Items;
+    const firstTimedItem = finalTranscriptItems.find(item => item.StartTime != null);
+    if (!firstTimedItem) {
+        console.warn('transcript results missing StartTime', { transcriptResults });
+        return null;
+    }
+    const startTime = firstTimedItem.StartTime;
+    const endTime = finalTranscriptItems[finalTranscriptItems.length - 1].EndTime;
     if (finalTranscriptItems?.length > 0) {
       const finalTranscript = joinTranscriptItems(finalTranscriptItems, lastProcessedIndex);
-      return { finalTranscript, lastProcessedIndex: 0 };
+      return { finalTranscript, lastProcessedIndex: 0, startTime, endTime};
     }
   }
 
@@ -191,7 +214,15 @@ function getFinalTranscript(transcriptResults = [], lastProcessedIndex = 0, enab
   if (allItemsAreStable === false) return null; // We were not able to find a punctuation
 
   const stableTranscript = joinTranscriptItems(segmentItems);
-  return { finalTranscript: stableTranscript, lastProcessedIndex: firstSegmentEndIndex + 1 };
+  const firstTimedItem   = segmentItems.find(item => item.StartTime != null);
+  const lastTimedItem    = [...segmentItems].reverse().find(item => item.EndTime != null);
+
+  return {
+      finalTranscript:    stableTranscript,
+      lastProcessedIndex: firstSegmentEndIndex + 1,
+      startTime:          firstTimedItem?.StartTime ?? null,
+      endTime:            lastTimedItem?.EndTime ?? null,
+  };
 }
 
 function joinTranscriptItems(transcriptItems = [], lastProcessedIndex = 0) {

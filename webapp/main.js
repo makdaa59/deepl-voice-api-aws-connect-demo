@@ -5,7 +5,15 @@ import "amazon-connect-streams";
 
 import MicrophoneStream from "microphone-stream";
 
-import { getConnectURLS, addUpdateLocalStorageKey, getLocalStorageValueByKey, base64ToArrayBuffer, isStringUndefinedNullEmpty, isDebugMode } from "./utils/commonUtility";
+import {
+  getConnectURLS,
+  addUpdateLocalStorageKey,
+  getLocalStorageValueByKey,
+  base64ToArrayBuffer,
+  isStringUndefinedNullEmpty,
+  isDebugMode,
+  isAWSMode
+} from "./utils/commonUtility";
 import {
   AGENT_TRANSLATION_TO_AGENT_VOLUME,
   AUDIO_FEEDBACK_FILE_PATH,
@@ -13,13 +21,38 @@ import {
   LOGGER_PREFIX,
   LATENCY_TRACKING_ENABLED,
   AUDIO_INGEST_SAMPLE_RATE,
-  AUDIO_OUTPUT_SAMPLE_RATE
+  AUDIO_OUTPUT_SAMPLE_RATE,
+  TRANSCRIBE_PARTIAL_RESULTS_STABILITY
 } from "./constants";
-import { getLoginUrl, getValidTokens, handleRedirect, isAuthenticated, logout, setRedirectURI, startTokenRefreshTimer } from "./utils/authUtility";
+import {
+  getLoginUrl,
+  getValidTokens,
+  handleRedirect,
+  isAuthenticated,
+  logout,
+  setRedirectURI,
+  startTokenRefreshTimer
+} from "./utils/authUtility";
+import {
+  initLogStream,
+  resetLogStream
+} from "./utils/cwLoggerUtility";
+
 import { AudioStreamManager } from "./managers/AudioStreamManager";
 import { SessionTrackManager, TrackType } from "./managers/SessionTrackManager";
 import { createMicrophoneStream } from "./utils/transcribeUtils";
-import { listStreamingLanguages } from "./adapters/transcribeAdapter";
+import { listTranslateLanguages, translateText } from "./adapters/translateAdapter";
+import {
+  describeVoices,
+  listPollyEngines,
+  listPollyLanguages,
+  synthesizeSpeech
+} from "./adapters/pollyAdapter";
+import {
+  listStreamingLanguages,
+  startAgentStreamTranscription,
+  startCustomerStreamTranscription
+} from "./adapters/transcribeAdapter";
 import { CONNECT_CONFIG } from "./config";
 import { AudioContextManager } from "./managers/AudioContextManager";
 import { AudioInputTestManager } from "./managers/InputTestManager";
@@ -43,6 +76,11 @@ let AudioContextMgr = new AudioContextManager();
 
 // AgentMicTestManager to test agent's mic
 let AgentMicTestManager;
+
+//Agent Mic Stream used as input for DeepL Voice when transcribing agent's voice
+let DeepLVoiceToCustomerAudioStream;
+//Customer Speaker Stream used as input for DeepL Voice when transcribing customer's voice
+let DeepLVoiceFromCustomerAudioStream;
 
 //Agent Mic Stream used as input for Amazon Transcribe when transcribing agent's voice
 let AmazonTranscribeToCustomerAudioStream;
@@ -74,6 +112,23 @@ let customerTranslateFromLanguageSearchable;
 let customerTranslateToLanguageSearchable;
 let agentTranslateFromLanguageSearchable;
 let agentTranslateToLanguageSearchable;
+
+// AWS Services for optionally comparing latencies
+const AWSEnabled = isAWSMode()
+let awsTranscribeLanguages;
+let awsTranscribeCustomerLanguage;
+let awsTranscribeAgentLanguage;
+const partialResultsStability = TRANSCRIBE_PARTIAL_RESULTS_STABILITY[1];
+let awsTranslateLanguages;
+let awsTranslateCustomerLanguage;
+let awsTranslateAgentLanguage;
+let awsPollyLanguages;
+let awsPollyCustomerLanguage;
+let awsPollyAgentLanguage;
+let awsPollyEngines;
+let awsPollyCustomerVoice;
+let awsPollyAgentVoice;
+
 
 /**
  * Display error message to user
@@ -166,7 +221,6 @@ function showApp() {
 }
 
 const onLoad = async () => {
-  console.info(`${LOGGER_PREFIX} - index loaded`);
   bindUIElements();
   initEventListeners();
   CCP_V2V.UI.logoutButton.style.display = "block";
@@ -178,6 +232,11 @@ const onLoad = async () => {
   loadVolumeSliders();
   setLatencyTrackingUIVisibility();
   initCCP(onConnectInitialized);
+  if (AWSEnabled) {
+      loadAWSDefaults();
+      document.getElementById('customer-latency-customerAWSVoiceToSynthesis').hidden = false;
+      document.getElementById('agent-latency-agentAWSVoiceToSynthesis').hidden = false;
+  }
 };
 
 const bindUIElements = () => {
@@ -375,7 +434,7 @@ const initEventListeners = () => {
     const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
     if (event.target.checked) {
       if (ToCustomerAudioStreamManager != null) {
-        console.log(`${LOGGER_PREFIX} - agentStreamMicCheckbox change - Starting microphone with volume: ${micVolume}`);
+        console.info(`${LOGGER_PREFIX} - agentStreamMicCheckbox change - Starting microphone`,  { micVolume });
         ToCustomerAudioStreamManager.startMicrophone(micConstraints).then(() => {
           ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
         })
@@ -456,9 +515,9 @@ const initCCP = async (onConnectInitialized) => {
 
 const setLatencyTrackingUIVisibility = () => {
   const debugMode = isDebugMode();
-  console.log(`${LOGGER_PREFIX} - Latency tracking enabled: ${LATENCY_TRACKING_ENABLED}, Debug mode: ${debugMode}`);
+  console.info(`${LOGGER_PREFIX} - Latency tracking enabled`, { LATENCY_TRACKING_ENABLED, debugMode });
   if (!LATENCY_TRACKING_ENABLED || !debugMode) {
-    console.log(`${LOGGER_PREFIX} - Latency tracking is disabled or debug mode is off, hiding latency tracking UI panels`);
+    console.info(`${LOGGER_PREFIX} - Latency tracking is disabled or debug mode is off, hiding latency tracking UI panels`);
     CCP_V2V.UI.latencyTrackingPanels.forEach((panel) => {
       panel.style.display = "none";
     });
@@ -484,7 +543,7 @@ const onConnectInitialized = (connectAgent) => {
 function subscribeToAgentEvents() {
   // Subscribe to Agent Events from Streams API, and handle Agent events with functions defined above
   if (agentEventsBound) {
-    console.log(`${LOGGER_PREFIX} - already subscribed to events for agent`);
+    console.info(`${LOGGER_PREFIX} - already subscribed to events for agent`);
     return;
   }
   agentEventsBound = true;
@@ -502,19 +561,22 @@ function subscribeToAgentEvents() {
 function subscribeToContactEvents() {
   // Subscribe to Contact Events from Streams API, and handle Contact events
   if (contactEventsBound) {
-    console.log(`${LOGGER_PREFIX} - already subscribed to events for contact`);
+    console.info(`${LOGGER_PREFIX} - already subscribed to events for contact`);
     return;
   }
   contactEventsBound = true;
 
   console.info(`${LOGGER_PREFIX} - subscribing to events for contact`);
   connect.contact((contact) => {
-    console.info(`${LOGGER_PREFIX} - new contact`, contact);
-    if (contact.getActiveInitialConnection() && contact.getActiveInitialConnection().getEndpoint()) {
-      console.info(`${LOGGER_PREFIX} - new contact is from ${contact.getActiveInitialConnection().getEndpoint().phoneNumber}`);
-    } else {
-      console.info(`${LOGGER_PREFIX} - this is an existing contact for this agent`);
-    }
+    const contactId = contact.contactId;
+    initLogStream(contactId).then(() => {
+      if (contact.getActiveInitialConnection() && contact.getActiveInitialConnection().getEndpoint()) {
+        const phoneNumber = contact.getActiveInitialConnection().getEndpoint().phoneNumber;
+        console.info(`${LOGGER_PREFIX} - new contact`, { contactId, phoneNumber });
+      } else {
+        console.info(`${LOGGER_PREFIX} - this is an existing contact for this agent`, { contactId });
+      }
+    })
 
     contact.onConnecting(onContactConnecting);
     contact.onConnected(onContactConnected);
@@ -525,8 +587,7 @@ function subscribeToContactEvents() {
 }
 
 async function onContactConnecting(contact) {
-  console.info(`${LOGGER_PREFIX} - contact is connecting`, contact);
-
+  console.info(`${LOGGER_PREFIX} - contact is connecting:`, contact.contactId);
   if (customerLanguageSearchable) customerLanguageSearchable.disable();
   if (agentLanguageSearchable) agentLanguageSearchable.disable();
   CCP_V2V.UI.customerFormalitySelect.disabled = true;
@@ -540,8 +601,10 @@ async function onContactConnecting(contact) {
 }
 
 async function onContactConnected(contact) {
-  console.info(`${LOGGER_PREFIX} - contact connected`, contact);
-
+  console.info(`${LOGGER_PREFIX} - contact connected:`, contact.contactId);
+  if (AWSEnabled) {
+    await setAWSSelectedLanguages()
+  }
   await agentStartStreaming();
   await customerStartStreaming();
 
@@ -554,7 +617,7 @@ async function onContactConnected(contact) {
 }
 
 function onContactEnded(contact) {
-  console.info(`${LOGGER_PREFIX} - contact has ended`, contact);
+  console.info(`${LOGGER_PREFIX} - contact has ended`, contact.contactId);
   CurrentAgentConnectionId = null;
   if (ToCustomerAudioStreamManager != null) {
     ToCustomerAudioStreamManager.dispose();
@@ -571,15 +634,16 @@ function onContactEnded(contact) {
   customerStopStreaming();
   agentStopStreaming();
   cleanUpUI();
+  resetLogStream();
 }
 
 async function onContactDestroyed(contact) {
-  console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact);
+  console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact.contactId);
   clearTranscriptCards();
 }
 
 async function onAgentLocalMediaStreamCreated(data) {
-  //console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
+  console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
   CurrentAgentConnectionId = data.connectionId;
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
   const peerConnection = session?._pc;
@@ -592,41 +656,6 @@ function setAudioElementsSinkIds() {
   CCP_V2V.UI.fromCustomerAudioElement.setSinkId(CCP_V2V.UI.speakerSelect.value);
   CCP_V2V.UI.toCustomerAudioElement.setSinkId(CCP_V2V.UI.speakerSelect.value);
   CCP_V2V.UI.toAgentAudioElement.setSinkId(CCP_V2V.UI.speakerSelect.value);
-}
-
-//Instead of streaming Microphone, stream an Audio File
-function streamFile() {
-  try {
-    const fileStreamAudioTrack = RTCSessionTrackManager.createFileTrack("./assets/speech_20241113001759828.mp3");
-    //console.info(`${LOGGER_PREFIX} - streamFile`, fileStreamAudioTrack);
-    RTCSessionTrackManager.replaceTrack(fileStreamAudioTrack, TrackType.FILE);
-  } catch (error) {
-    console.error(`${LOGGER_PREFIX} - streamFile`, error);
-    raiseError(`Error steaming file: ${error}`);
-  }
-}
-
-//Instead of streaming File, stream Mic
-async function streamMic() {
-  const selectedMic = CCP_V2V.UI.micSelect.value;
-  if (!selectedMic) {
-    raiseError("Please select a microphone!");
-    return;
-  }
-
-  const micConstraints = getMicrophoneConstraints(selectedMic);
-  const micStreamAudioTrack = await RTCSessionTrackManager.createMicTrack(micConstraints);
-  //console.info(`${LOGGER_PREFIX} - streamMic`, micStreamAudioTrack);
-  RTCSessionTrackManager.replaceTrack(micStreamAudioTrack, TrackType.MIC);
-}
-
-//Instead of removing AudioTrack, stream a silent AudioTrack
-async function removeAudioTrack() {
-  const silentTrack = RTCSessionTrackManager.createSilentTrack();
-  // console.info(
-  //   `${LOGGER_PREFIX} - removeAudioTrack - replacing with a silent track`
-  // );
-  RTCSessionTrackManager.replaceTrack(silentTrack, TrackType.SILENT);
 }
 
 async function testMicrophone() {
@@ -769,6 +798,40 @@ async function getDevices() {
   }
 }
 
+async function loadAWSDefaults() {
+  awsTranscribeLanguages = listStreamingLanguages();
+  awsTranslateLanguages = await listTranslateLanguages();
+  awsPollyLanguages = listPollyLanguages();
+  awsPollyEngines = listPollyEngines();
+}
+
+async function setAWSSelectedLanguages() {
+    const selectedCustomerLanguage = CCP_V2V.UI.customerLanguageSelect.value;
+    const selectedAgentLanguage = CCP_V2V.UI.agentLanguageSelect.value;
+    awsTranscribeCustomerLanguage = getAWSTranscribeLanguageCode(selectedCustomerLanguage);
+    awsTranscribeAgentLanguage = getAWSTranscribeLanguageCode(selectedAgentLanguage);
+    awsTranslateCustomerLanguage = getAWSTranslateLanguageCode(selectedAgentLanguage);
+    awsTranslateAgentLanguage = getAWSTranslateLanguageCode(selectedCustomerLanguage);
+    awsPollyCustomerLanguage = getAWSPollyLanguageCode(selectedAgentLanguage);
+    awsPollyAgentLanguage = getAWSPollyLanguageCode(selectedCustomerLanguage);
+    const pollyCustomerVoices = await describeVoices(awsPollyAgentLanguage, awsPollyEngines[2]);
+    awsPollyCustomerVoice = pollyCustomerVoices[0].Id;
+    const pollyAgentVoices = await describeVoices(awsPollyCustomerLanguage, awsPollyEngines[2]);
+    awsPollyAgentVoice = pollyAgentVoices[0].Id;
+    const awsSelectedLanguages = {
+      selectedCustomerLanguage,
+      selectedAgentLanguage,
+      awsTranscribeCustomerLanguage,
+      awsTranscribeAgentLanguage,
+      awsTranslateCustomerLanguage,
+      awsTranslateAgentLanguage,
+      awsPollyCustomerLanguage,
+      awsPollyAgentLanguage,
+      awsPollyCustomerVoice,
+      awsPollyAgentVoice
+    }
+    console.info('aws selected languages', awsSelectedLanguages);
+}
 //Creates Customer Speaker Stream used as input for Amazon Transcribe when transcribing customer's voice
 async function captureFromCustomerAudioStream() {
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
@@ -830,7 +893,7 @@ async function customerStartSession(audioLatencyTrackManager) {
       console.info(`${LOGGER_PREFIX} - 🎤 Customer session: Using DeepL Internal TTS`);
     }
 
-    console.info(`${LOGGER_PREFIX} - Customer session config:`, JSON.stringify(sessionConfig, null, 2));
+    console.info(`${LOGGER_PREFIX} - Customer session config:`, sessionConfig);
 
     await DeepLVoiceClientCustomer.startSession(sessionConfig);
   } catch (error) {
@@ -912,12 +975,24 @@ async function customerStartStreaming() {
     const toCustomerAudioTrack = ToCustomerAudioStreamManager.getAudioTrack();
     RTCSessionTrackManager.replaceTrack(toCustomerAudioTrack, TrackType.POLLY);
 
-    const AmazonTranscribeFromCustomerAudioStream = await captureFromCustomerAudioStream();
+    const DeepLVoiceFromCustomerAudioStream = await captureFromCustomerAudioStream();
     const sampleRate = AudioContextMgr.getActualSampleRate();
-    console.info(`${LOGGER_PREFIX} - customerStartStreaming - AmazonTranscribeFromCustomerAudioStream Sample Rate: ${sampleRate}`);
+    console.info(`${LOGGER_PREFIX} - customerStartStreaming - AmazonTranscribeFromCustomerAudioStream`, { sampleRate });
   
-    DeepLVoiceClientCustomer.streamAudio(AmazonTranscribeFromCustomerAudioStream, sampleRate);
+    DeepLVoiceClientCustomer.streamAudio(DeepLVoiceFromCustomerAudioStream, sampleRate);
 
+    if (AWSEnabled) {
+      AmazonTranscribeFromCustomerAudioStream = await captureFromCustomerAudioStream();
+      startCustomerStreamTranscription(
+          AmazonTranscribeFromCustomerAudioStream,
+          sampleRate,
+          awsTranscribeCustomerLanguage,
+          partialResultsStability,
+          handleAWSCustomerTranscript,
+          () => {},
+          audioLatencyTrackManager
+      );
+    }
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - customerStartStreaming - Error starting customer streaming:`, error);
     raiseError(`Error starting customer streaming: ${error}`);
@@ -925,6 +1000,16 @@ async function customerStartStreaming() {
 }
 
 async function customerStopStreaming() {
+  if (DeepLVoiceFromCustomerAudioStream) {
+    //replace the stream with a silent stream
+    const audioContext = await getAudioContext();
+    const silentStream = audioContext.createMediaStreamDestination().stream;
+    DeepLVoiceFromCustomerAudioStream.setStream(silentStream);
+    DeepLVoiceFromCustomerAudioStream.stop();
+    DeepLVoiceFromCustomerAudioStream.destroy();
+    DeepLVoiceFromCustomerAudioStream = undefined;
+  }
+
   if (AmazonTranscribeFromCustomerAudioStream) {
     //replace the stream with a silent stream
     const audioContext = await getAudioContext();
@@ -971,11 +1056,24 @@ async function agentStartStreaming() {
       ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
     })
 
-    AmazonTranscribeToCustomerAudioStream = await createMicrophoneStream(micConstraints);
-    const agentStreamSampleRate = AudioContextMgr.getActualSampleRate();
-    console.info(`${LOGGER_PREFIX} - agentStartStreaming - AmazonTranscribeToCustomerAudioStream Sample Rate: ${agentStreamSampleRate}`);
+    DeepLVoiceToCustomerAudioStream = await createMicrophoneStream(micConstraints);
+    const sampleRate = AudioContextMgr.getActualSampleRate();
+    console.info(`${LOGGER_PREFIX} - agentStartStreaming - AmazonTranscribeToCustomerAudioStream`, { sampleRate });
 
-    DeepLVoiceClientAgent.streamAudio(AmazonTranscribeToCustomerAudioStream, agentStreamSampleRate);
+    DeepLVoiceClientAgent.streamAudio(DeepLVoiceToCustomerAudioStream, sampleRate);
+
+    if (AWSEnabled) {
+      AmazonTranscribeToCustomerAudioStream = await createMicrophoneStream(micConstraints);
+      startAgentStreamTranscription(
+          AmazonTranscribeToCustomerAudioStream,
+          sampleRate,
+          awsTranscribeAgentLanguage,
+          partialResultsStability,
+          handleAWSAgentTranscript,
+          () => {},
+          audioLatencyTrackManager
+      );
+    }
 
     disableMicrophoneAndSpeakerSelection();
   } catch (error) {
@@ -985,6 +1083,16 @@ async function agentStartStreaming() {
 }
 
 async function agentStopStreaming() {
+  if (DeepLVoiceToCustomerAudioStream) {
+    //replace the stream with a silent stream
+    const audioContext = await getAudioContext();
+    const silentStream = audioContext.createMediaStreamDestination().stream;
+    DeepLVoiceToCustomerAudioStream.setStream(silentStream);
+    DeepLVoiceToCustomerAudioStream.stop();
+    DeepLVoiceToCustomerAudioStream.destroy();
+    DeepLVoiceToCustomerAudioStream = undefined;
+  }
+
   if (AmazonTranscribeToCustomerAudioStream) {
     //replace the stream with a silent stream
     const audioContext = await getAudioContext();
@@ -1008,10 +1116,10 @@ async function agentStopStreaming() {
 }
 
 async function toggleAgentTranscriptionMute() {
-  if (AmazonTranscribeToCustomerAudioStream) {
-    const audioTrack = AmazonTranscribeToCustomerAudioStream.stream.getAudioTracks()[0];
+  if (DeepLVoiceToCustomerAudioStream) {
+    const audioTrack = DeepLVoiceToCustomerAudioStream.stream.getAudioTracks()[0];
     if (audioTrack) {
-      //Disable the track in AmazonTranscribeToCustomerAudioStream
+      //Disable the track in DeepLVoiceToCustomerAudioStream
       audioTrack.enabled = !audioTrack.enabled;
       IsAgentTranscriptionMuted = !audioTrack.enabled;
       //Mute the Mic so it is not streamed to Customer
@@ -1024,6 +1132,12 @@ async function toggleAgentTranscriptionMute() {
         ToCustomerAudioStreamManager.setMicrophoneVolume(parseFloat(CCP_V2V.UI.agentStreamMicVolume.value));
       }
       CCP_V2V.UI.agentMuteTranscriptionButton.textContent = IsAgentTranscriptionMuted ? "Unmute" : "Mute";
+    }
+  }
+  if (AmazonTranscribeToCustomerAudioStream) {
+    const audioTrack = AmazonTranscribeToCustomerAudioStream.stream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
     }
   }
 }
@@ -1041,7 +1155,7 @@ async function loadTranslateLanguageCodes() {
     raiseError(`Error listing DeepL languages: ${error}`);
     return [];
   });
-  console.log(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
+  console.info(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
 
   // Populate new simplified language selects
   deepLTranslateFromLanguages.forEach((language) => {
@@ -1259,6 +1373,94 @@ function handleAgentSynthesis(data) {
   }
 }
 
+function getAWSTranscribeLanguageCode(selectedLanguageCode) {
+  for (const languageCode of awsTranscribeLanguages) {
+    if (languageCode.includes(selectedLanguageCode)) {
+      return languageCode;
+    }
+  }
+}
+
+function getAWSTranslateLanguageCode(selectedLanguageCode) {
+  for (const [i, language] of awsTranslateLanguages.entries()) {
+    if (language.LanguageCode.includes(selectedLanguageCode)) {
+      return language.LanguageCode;
+    }
+  }
+}
+
+function getAWSPollyLanguageCode(selectedLanguageCode) {
+  for (const languageCode of awsPollyLanguages) {
+    if (languageCode.includes(selectedLanguageCode)) {
+      return languageCode;
+    }
+  if (selectedLanguageCode == 'zh') {
+    return 'cmn-CN';
+  }
+  }
+}
+
+async function handleAWSCustomerTranscript(inputText, startTime, endTime) {
+  if (isStringUndefinedNullEmpty(inputText)) return;
+  const translatedText = await translateText(awsTranscribeCustomerLanguage, awsTranslateCustomerLanguage, inputText);
+
+  if (!isStringUndefinedNullEmpty(translatedText)) {
+    synthesizeCustomerVoice({ inputText, translatedText, startTime, endTime });
+  }
+}
+
+async function handleAWSAgentTranscript(inputText, startTime, endTime) {
+  if (isStringUndefinedNullEmpty(inputText)) return;
+  const translatedText = await translateText(awsTranscribeAgentLanguage, awsTranslateAgentLanguage, inputText);
+
+  if (!isStringUndefinedNullEmpty(translatedText)) {
+    synthesizeAgentVoice({ inputText, translatedText, startTime, endTime });
+  }
+}
+
+async function synthesizeCustomerVoice({ inputText, translatedText, startTime, endTime }) {
+  if (isStringUndefinedNullEmpty(translatedText)) return;
+
+  const synthetizedSpeech = await synthesizeSpeech(awsPollyCustomerLanguage, awsPollyEngines[2], awsPollyCustomerVoice, translatedText).catch((error) => {
+    console.error(`${LOGGER_PREFIX} - synthesizeCustomerVoice - Error synthesizing speech:`, error);
+    raiseError(`Error synthesizing speech: ${error}`);
+    return null;
+  });
+  if (!synthetizedSpeech) return;
+  const now = Date.now() / 1000;
+  await audioLatencyTrackManager.onAWSAudioWithText({
+    type: 'customer',
+    sourceLang: awsTranscribeCustomerLanguage,
+    targetLang: awsTranslateCustomerLanguage,
+    sourceTexts: inputText,
+    targetTexts: translatedText,
+    sourceStartTime: startTime,
+    receiveTime: now
+  })
+}
+
+async function synthesizeAgentVoice({ inputText, translatedText, startTime, endTime }) {
+  if (isStringUndefinedNullEmpty(translatedText)) return;
+
+  const synthetizedSpeech = await synthesizeSpeech(awsPollyAgentLanguage, awsPollyEngines[2], awsPollyAgentVoice, translatedText).catch((error) => {
+    console.error(`${LOGGER_PREFIX} - synthesizeAgentVoice - Error synthesizing speech:`, error);
+    raiseError(`Error synthesizing speech: ${error}`);
+    return null;
+  });
+  if (!synthetizedSpeech) return;
+
+  const now = Date.now() / 1000;
+  await audioLatencyTrackManager.onAWSAudioWithText({
+    type: 'agent',
+    sourceLang: awsTranscribeAgentLanguage,
+    targetLang: awsTranslateAgentLanguage,
+    sourceTexts: inputText,
+    targetTexts: translatedText,
+    sourceStartTime: startTime,
+    receiveTime: now
+  })
+}
+
 function loadTranslationFormalities() {
   CCP_V2V.UI.customerFormalitySelect.innerHTML = "";
   CCP_V2V.UI.agentFormalitySelect.innerHTML = "";
@@ -1448,7 +1650,7 @@ function getMicrophoneConstraints(deviceId) {
     },
   };
 
-  console.info(`${LOGGER_PREFIX} - getMicrophoneConstraints: ${JSON.stringify(microphoneConstraints)}`);
+  console.info(`${LOGGER_PREFIX} - getMicrophoneConstraints`, { microphoneConstraints });
   return microphoneConstraints;
 }
 
@@ -1506,7 +1708,7 @@ function disableMicrophoneAndSpeakerSelection() {
  * 3. Access via console: window.debugDashboard
  */
 if (isDebugMode()) {
-  console.log('🔧 Debug mode enabled - loading health dashboard...');
+  console.info('🔧 Debug mode enabled - loading health dashboard...');
 
   // Wait for DOM to be ready
   if (document.readyState === 'loading') {
@@ -1535,8 +1737,8 @@ function initDebugDashboard() {
     // Expose to window for console debugging
     window.debugDashboard = dashboard;
 
-    console.log('✅ Debug dashboard loaded successfully');
-    console.log('💡 Access via: window.debugDashboard');
+    console.info('✅ Debug dashboard loaded successfully');
+    console.info('💡 Access via: window.debugDashboard');
   }).catch(error => {
     console.error('❌ Failed to load debug dashboard:', error);
   });
@@ -1576,9 +1778,9 @@ function initEnvironmentSelector() {
     : 'https://api.deepl.com';
 
   environmentSelect.value = savedEnvironment;
-  console.log(`🌍 Environment initialized: ${savedEnvironment.toUpperCase()}`);
-  console.log(`   → API URL: ${initialApiUrl}`);
-  console.log(`   → API Key: DEEPL_${savedEnvironment.toUpperCase()}_API_KEY`);
+  console.info(`🌍 Environment initialized: ${savedEnvironment.toUpperCase()}`);
+  console.info(`   → API URL: ${initialApiUrl}`);
+  console.info(`   → API Key: DEEPL_${savedEnvironment.toUpperCase()}_API_KEY`);
 
   // Apply initial environment to clients if they exist
   updateClientsEnvironment(savedEnvironment);
@@ -1591,10 +1793,10 @@ function initEnvironmentSelector() {
       : 'https://api.deepl.com';
 
     localStorage.setItem('deepl_environment', newEnvironment);
-    console.log(`🔄 Environment switched to: ${newEnvironment.toUpperCase()}`);
-    console.log(`   → API URL: ${apiUrl}`);
-    console.log(`   → API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY`);
-    console.log(`   → Note: Active sessions continue with previous environment. New sessions will use ${newEnvironment.toUpperCase()}.`);
+    console.info(`🔄 Environment switched to: ${newEnvironment.toUpperCase()}`);
+    console.info(`   → API URL: ${apiUrl}`);
+    console.info(`   → API Key: DEEPL_${newEnvironment.toUpperCase()}_API_KEY`);
+    console.info(`   → Note: Active sessions continue with previous environment. New sessions will use ${newEnvironment.toUpperCase()}.`);
 
     // Update all DeepL clients
     updateClientsEnvironment(newEnvironment);

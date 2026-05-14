@@ -7,7 +7,10 @@ import {
     AUDIO_INGEST_SAMPLE_RATE,
     BUFFER_LEN
 } from "../constants";
-import { endsWithEOSPunctuation } from "../utils/commonUtility";
+import {
+    endsWithEOSPunctuation,
+    isEvaluateMode
+} from "../utils/commonUtility";
 import { FrameTimer } from "./FrameTimerManager";
 
 
@@ -90,6 +93,16 @@ export class AudioLatencyTrackManager {
         
         this.audioTextSync('customer')
         this.audioTextSync('agent')
+        this.evaluators = ['COMET', 'EPIC'] // "BERT", "SBERT"
+        this.evaluate = isEvaluateMode();
+
+        // AWS latency tracking - only used when comapairing AWS services
+        this.awsSessionStartTimes = { customer: null, agent: null };
+        this.awsResults = { customer: [], agent: [] };
+        this.awsFirstVoiceToFirstSyntheisLatencies = {
+            customer: [],
+            agent: []
+        }
     }
 
     onConcludedSourceTexts(type, text, startTime, endTime, language) {
@@ -107,6 +120,52 @@ export class AudioLatencyTrackManager {
         this.audioTexts[type].push({
             text, receiveTime
         });
+    }
+
+    async onAWSAudioWithText({
+        type, sourceLang, targetLang, sourceTexts, targetTexts, sourceStartTime, receiveTime
+    }) {
+        const sessionStart = this.awsSessionStartTimes[type];
+        this.awsResults[type].push({ sourceLang, targetLang, sourceTexts, targetTexts, sourceStartTime, receiveTime })
+        if (!endsWithEOSPunctuation(sourceTexts)) {
+            return;
+        }
+        const awsResults = this.awsResults[type];
+        this.awsResults[type] = [];
+
+        sourceTexts = awsResults.map(result => result.sourceTexts).join(' ');
+        targetTexts = awsResults.map(result => result.targetTexts).join(' ');
+        sourceStartTime = awsResults[0].sourceStartTime;
+        receiveTime = awsResults[0].receiveTime;
+        let latencyMs, latencySec;
+        if (sourceStartTime) {
+            const sourceWallClockTime = sessionStart + sourceStartTime;
+            latencySec = receiveTime - sourceWallClockTime;
+            latencyMs = latencySec * 1000;
+        }
+        console.info('aws latency', {
+            type,
+            sourceLang,
+            targetLang,
+            sourceTexts,
+            targetTexts,
+            latencyMs,
+        });
+        if (latencyMs > 100000) {
+            return;
+        }
+        if (latencyMs) {
+            this._pushLatency(
+                this.awsFirstVoiceToFirstSyntheisLatencies[type],
+                latencyMs,
+                `${type}-latency-${type}AWSVoiceToSynthesis`
+            );
+        }
+        if (this.evaluate) {
+            await this._evaluateTranslations(
+                { api: 'AWS', sourceLang, targetLang, sourceTexts, targetTexts, latencySec }
+            )
+        }       
     }
 
     async audioTextSync(type) {
@@ -130,8 +189,10 @@ export class AudioLatencyTrackManager {
 
                 const firstAudioTs = this.audioTexts[type][0].receiveTime;
                 const sourceStartTs = await this.frameTimers[type].getClosestBefore(sourceStartTime / 1000);
-                const latencyMs = (firstAudioTs - sourceStartTs) * 1000;
-                console.log('translation latency', {
+                const latencySec = firstAudioTs - sourceStartTs
+                const latencyMs = latencySec * 1000;
+                console.info('deepL latency', {
+                    type,
                     sourceLang,
                     targetLang,
                     sourceTexts,
@@ -143,18 +204,23 @@ export class AudioLatencyTrackManager {
                 this.concludedTargetTexts[type] = this.concludedTargetTexts[type].slice(lastTargetIndex + 1);
                 this.concludedSourceTexts[type] = this.concludedSourceTexts[type].slice(lastSourceIndex + 1);
                 
-                if (0 < latencyMs < 100000) {
-                    this._pushLatency(
-                        this.firstVoiceToFirstSyntheisLatencies[type],
-                        latencyMs,
-                        `${type}-latency-${type}VoiceToSynthesis`
-                    );
+                if (latencyMs > 100000) {
+                    return;
                 }
-                
+                this._pushLatency(
+                    this.firstVoiceToFirstSyntheisLatencies[type],
+                    latencyMs,
+                    `${type}-latency-${type}VoiceToSynthesis`
+                );
+                if (this.evaluate) {
+                    await this._evaluateTranslations(
+                        { api: 'DEEPL_VOICE', sourceLang, targetLang, sourceTexts, targetTexts, latencySec }
+                    )
+                }
             } catch (err) {
                 console.error(err);
             }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 
@@ -201,6 +267,30 @@ export class AudioLatencyTrackManager {
             }
         }
         return { lastSourceIndex, sourceLang, sourceTexts };
+    }
+
+    async _evaluateTranslations({ api, sourceLang, targetLang, sourceTexts, targetTexts, latencySec }) {
+        try {
+            for (const evaluator of this.evaluators) {
+                await fetch('http://localhost:3001/publishTranslationsForEvaluation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: {
+                            evaluator,
+                            translator_api: api,
+                            source_lang: sourceLang,
+                            output_lang: targetLang,
+                            source_texts: sourceTexts,
+                            translated_texts: targetTexts,
+                            latency_sec: latencySec
+                        }
+                    })
+                });
+            }
+        } catch (err) {
+            console.warn('failed to evaluate translation accuracy.  make sure server is running on port 3001')
+        }
     }
 
     enqueueAudio(type, buffer, timestamp) {
@@ -478,6 +568,7 @@ export class AudioLatencyTrackManager {
     }
 
     updateLatencyDisplay(latencyData, elementId) {
+        console.info(`latency update - ${elementId}`, latencyData);
         const { latency, average, min, max, p95 } = latencyData;
         const element = document.getElementById(elementId);
         const valueSpan = element.querySelector(".latency-value");
